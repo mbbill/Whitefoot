@@ -237,20 +237,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
 
         let eligible = self.eligible_postcondition_functions(&[])?;
+        let by_function = self.eligible_signatures_by_function(&eligible);
         let mut admitted_records = Vec::new();
         for record in &records {
-            let concrete = self
-                .signatures
-                .iter()
-                .filter(|signature| {
-                    eligible.contains(&signature.id)
-                        && self
-                            .tree
-                            .path(signature.node)
-                            .is_ok_and(|path| path == &record.function)
-                })
-                .cloned()
-                .collect::<Vec<_>>();
+            let concrete = self.signatures_of(&by_function, &record.function);
             if concrete.is_empty() {
                 let symbolic = match self.symbolic_postcondition_signature(record) {
                     Ok(symbolic) => symbolic,
@@ -275,6 +265,43 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         }
         self.forward_delayed_postcondition_issue(&admitted_records)
+    }
+
+    /// The table positions of the signatures `eligible` names, by the path
+    /// of the function each one instantiates, in table order.
+    ///
+    /// Admitting a selector may append signatures, whose fresh ids `eligible`
+    /// never names, and changes no signature it already holds, so one index
+    /// taken before the admissions serves every record of one pass.
+    fn eligible_signatures_by_function(
+        &self,
+        eligible: &[FunctionId],
+    ) -> HashMap<crate::NodePath, Vec<usize>> {
+        let eligible: std::collections::HashSet<FunctionId> = eligible.iter().copied().collect();
+        let mut by_function: HashMap<crate::NodePath, Vec<usize>> = HashMap::new();
+        for (index, signature) in self.signatures.iter().enumerate() {
+            if !eligible.contains(&signature.id) {
+                continue;
+            }
+            if let Ok(path) = self.tree.path(signature.node) {
+                by_function.entry(path.clone()).or_default().push(index);
+            }
+        }
+        by_function
+    }
+
+    /// The indexed signatures of the function at `function`, cloned.
+    fn signatures_of(
+        &self,
+        by_function: &HashMap<crate::NodePath, Vec<usize>>,
+        function: &crate::NodePath,
+    ) -> Vec<FunctionSignature> {
+        by_function
+            .get(function)
+            .into_iter()
+            .flatten()
+            .filter_map(|index| self.signatures.get(*index).cloned())
+            .collect()
     }
 
     fn prepare_postcondition_selector_preflight(
@@ -558,19 +585,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 eligible.push(*function);
             }
         }
+        let by_function = self.eligible_signatures_by_function(&eligible);
         for record in &records {
-            let concrete = self
-                .signatures
-                .iter()
-                .filter(|signature| {
-                    eligible.contains(&signature.id)
-                        && self
-                            .tree
-                            .path(signature.node)
-                            .is_ok_and(|path| path == &record.function)
-                })
-                .cloned()
-                .collect::<Vec<_>>();
+            let concrete = self.signatures_of(&by_function, &record.function);
             for signature in concrete {
                 // A schema instance is judged as a schema instance here too:
                 // its type arguments are symbolic and the clause typing that

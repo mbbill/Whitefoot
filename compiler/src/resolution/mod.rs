@@ -775,6 +775,8 @@ pub enum ResolutionRule {
     Mod7,
     /// A module program's heap declaration spelling.
     Mod9,
+    /// The standard library's own qualifier.
+    Mod10,
 }
 
 impl ResolutionRule {
@@ -805,6 +807,7 @@ impl ResolutionRule {
             Self::Mod6 => "MOD-6",
             Self::Mod7 => "MOD-7",
             Self::Mod9 => "MOD-9",
+            Self::Mod10 => "MOD-10",
         }
     }
 }
@@ -960,6 +963,12 @@ pub enum ResolutionIssueKind {
         target: String,
         /// Why the target is refused.
         reason: &'static str,
+    },
+    /// A standard library record writes `std`, where the library names
+    /// itself `pkg` [MOD-10].
+    LibraryNamesItself {
+        /// The written path.
+        path: String,
     },
     /// A qualified path's module prefix names no registered module [MOD-5].
     UnknownModule {

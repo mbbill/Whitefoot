@@ -15,6 +15,7 @@ mod driver;
 mod graph;
 mod ir;
 mod lexer;
+mod library;
 mod lowering;
 mod prelude;
 mod resolution;

@@ -81,13 +81,24 @@ impl CheckedProgram<'_, '_, '_> {
     /// closure introduces no heap requirement.
     pub(crate) fn admit_entry(&self, request: EntryRequest<'_>) -> Result<(), EntryRejection<'_>> {
         // [MOD-8] composition needs every declared function's definition; a
-        // pending interface declaration blocks it at the declaration.
+        // pending interface declaration blocks it at the declaration, and the
+        // build supplies the definition of every host module's function [PRE-2].
+        let bundle = self._resolved.syntax().classified_bundle().source_bundle();
         if let Some(pending) = self
             ._resolved
             .interface_functions()
             .iter()
-            .find(|function| function.definition().is_none())
-            .and_then(|function| self._resolved.declaration(function.declaration()))
+            .filter(|function| function.definition().is_none())
+            .filter_map(|function| self._resolved.declaration(function.declaration()))
+            .find(|declaration| {
+                !declaration
+                    .module()
+                    .and_then(|module| bundle.module(module))
+                    .is_some_and(|module| {
+                        module.package() == crate::Package::Standard
+                            && crate::library::is_host_module(module.path())
+                    })
+            })
         {
             return Err(EntryRejection::PendingDeclaration(pending));
         }

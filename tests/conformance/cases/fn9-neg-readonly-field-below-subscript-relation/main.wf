@@ -1,5 +1,7 @@
-alias kinds = pkg::kinds;
 alias Entry = pkg::kinds::Entry;
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+alias kinds = pkg::kinds;
 
 fn floor(entries: &Array<Entry, 4>, i: u64) -> result: u64 reads(entries) contract {
   requires i < 4_u64;

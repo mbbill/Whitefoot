@@ -126,15 +126,15 @@ generate() {
         done
         previous=$name
     done
-    printf 'pkg: [pkg::%s];\n\nentry app = pkg::main;\n' "$previous" >> "$graph"
-    printf 'public fn main() -> status: ExitStatus pure doc "Runs the chain.";\n' > "$root/module.wfm"
+    printf 'pkg: [pkg::%s, std::process];\n\nentry app = pkg::main;\n' "$previous" >> "$graph"
+    printf 'public fn main() -> status: std::process::ExitStatus pure doc "Runs the chain.";\n' > "$root/module.wfm"
     {
-        printf 'fn main() -> status: ExitStatus pure {\n'
+        printf 'fn main() -> status: std::process::ExitStatus pure {\n'
         printf '  let total = pkg::%s::f0(value: 1_u64);\n' "$previous"
         printf '  let low = iand(total, 1_u64);\n'
         printf '  match cvt.checked::<u64, u8>(low) {\n'
-        printf '    Ok(value: code) => {\n      return exit_status(code: code);\n    }\n'
-        printf '    Err(error: refused) => {\n      return exit_status(code: 255_u8);\n    }\n'
+        printf '    Ok(value: code) => {\n      return std::process::exit_status(code: code);\n    }\n'
+        printf '    Err(error: refused) => {\n      return std::process::exit_status(code: 255_u8);\n    }\n'
         printf '  }\n}\n'
     } > "$root/main.wf"
 }
@@ -189,19 +189,19 @@ generate_crossing() {
         } > "$directory/step.wf"
         previous=$name
     done
-    printf 'pkg: [pkg::%s];\n\nentry bench = pkg::main;\n' "$previous" >> "$graph"
-    printf 'public fn main() -> status: ExitStatus pure doc "Runs the crossing loop and exits with the low bits of its state.";\n' \
+    printf 'pkg: [pkg::%s, std::process];\n\nentry bench = pkg::main;\n' "$previous" >> "$graph"
+    printf 'public fn main() -> status: std::process::ExitStatus pure doc "Runs the crossing loop and exits with the low bits of its state.";\n' \
         > "$root/module.wfm"
     {
-        printf 'fn main() -> status: ExitStatus pure {\n'
+        printf 'fn main() -> status: std::process::ExitStatus pure {\n'
         printf '  let state = 88172645463325252_u64;\n'
         printf '  for @spin (index in 0_u64..100000000_u64) {\n'
         printf '    let next = pkg::%s::step(state: state);\n' "$previous"
         printf '    set state = next;\n  }\n'
         printf '  let low = iand(state, 127_u64);\n'
         printf '  match cvt.checked::<u64, u8>(low) {\n'
-        printf '    Ok(value: code) => {\n      return exit_status(code: code);\n    }\n'
-        printf '    Err(error: refused) => {\n      return exit_status(code: 255_u8);\n    }\n'
+        printf '    Ok(value: code) => {\n      return std::process::exit_status(code: code);\n    }\n'
+        printf '    Err(error: refused) => {\n      return std::process::exit_status(code: 255_u8);\n    }\n'
         printf '  }\n}\n'
     } > "$root/main.wf"
 }

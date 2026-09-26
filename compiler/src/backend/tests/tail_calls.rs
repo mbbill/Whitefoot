@@ -198,13 +198,13 @@ fn one_function_can_mix_tail_transfers_with_calls_retaining_local_storage() {
   return walk(n: next, value: value);
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let value = 10_u64;
   let seen = walk(n: 100002_u64, value: &value);
   if seen != 11_u64 {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
     );

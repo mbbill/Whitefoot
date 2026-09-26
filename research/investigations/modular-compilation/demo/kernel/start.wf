@@ -1,5 +1,7 @@
-alias model = pkg::data;
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
 alias fifo = pkg::runtime::queue;
+alias model = pkg::data;
 alias run_two = pkg::runtime::run_two;
 
 fn start() -> status: ExitStatus pure {

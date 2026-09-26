@@ -983,13 +983,13 @@ fn relay(value: Row) -> result: Row pure {
   return move updated;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let value = Row(left: 3_u64, right: 5_u64);
   let result = relay(value: move value);
   if result.right != 5_u64 {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
             |program| {
@@ -1421,16 +1421,16 @@ fn exchange(old: &Row) -> result: Row writes(old) {
   return move previous;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let first = build(seed: 11_u64);
   let previous = exchange(old: &first);
   if first.left != 99_u64 {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
   if previous.left != 11_u64 {
-    return exit_status(code: 2_u8);
+    return std::process::exit_status(code: 2_u8);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
             |program| {
@@ -1519,13 +1519,13 @@ fn relay(value: Row) -> result: Row pure {
   return pass(value: move value);
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let row = Row(left: 3_u64, right: 5_u64);
   let kept = relay(value: move row);
   if kept.left != 3_u64 {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
             |program| {
@@ -1569,14 +1569,14 @@ fn relay(left: Row, right: Row) -> result: Row pure {
   return choose(left: move left, right: move right);
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let left = Row(left: 1_u64, right: 2_u64);
   let right = Row(left: 3_u64, right: 4_u64);
   let kept = relay(left: move left, right: move right);
   if kept.left != 3_u64 {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
             |program| {
@@ -1626,13 +1626,13 @@ fn relay(value: Row) -> result: Row pure {
   return move updated;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let row = Row(left: 3_u64, right: 5_u64);
   let kept = relay(value: move row);
   if kept.left != 3_u64 {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
             |program| {
@@ -1671,7 +1671,7 @@ fn main() -> status: ExitStatus pure {
     #[test]
     fn checked_dense_ir_coalesces_without_changing_ownership() {
         with_program(
-            br#"fn main() -> status: ExitStatus pure {
+            br#"fn main() -> status: std::process::ExitStatus pure {
   let built = slots_new::<u64, 8>();
   for @fill (
     at in 0_u64..8_u64,
@@ -1680,7 +1680,7 @@ fn main() -> status: ExitStatus pure {
   ) {
     place_back(window: &built, value: 1_u64);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
             |program| {
@@ -1710,7 +1710,7 @@ fn main() -> status: ExitStatus pure {
                     .filter_map(|(index, _)| plan.values.get(index).copied().flatten())
                     .collect();
                 assert_eq!(slots.len(), 1, "construction and append use one backing");
-                // PRE-1's ExitStatus is an ordinary opaque nominal, so its
+                // PRE-2's ExitStatus is an ordinary opaque nominal, so its
                 // direct-call result owns backing independently of the run.
                 let IrType::Nominal(result) = function.result() else {
                     panic!("the source entry returns an ordinary nominal");

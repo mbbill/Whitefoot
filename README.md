@@ -255,8 +255,10 @@ Repository layout:
 
 - [compiler/](compiler/): the Rust compiler, LLVM emission, and native
   runtime support.
-- [lib/containers/](lib/containers/README.md): reusable Whitefoot container
-  source, exercised by callers in the ordinary program corpus.
+- [lib/std/](lib/std/README.md): the standard library package the compiler
+  carries from its own build: the host modules `std::io`, `std::text`,
+  `std::fs`, `std::net` and `std::process`, and the container modules under
+  `std::collections`, exercised by callers in the ordinary program corpus.
 - [spec/](spec/): the active language and its immutable version archives.
 - [tests/](tests/): normative conformance evidence, executable programs,
   code-generation evidence, and the separate performance regression suite.

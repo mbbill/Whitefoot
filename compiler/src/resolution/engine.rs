@@ -101,9 +101,12 @@ struct PathSegment {
 /// alias [MOD-4, MOD-5].
 #[derive(Clone, Debug)]
 struct Qualifier {
-    /// `None` when the path begins with `pkg`; otherwise the file-local
-    /// module alias that roots it.
+    /// `None` when the path begins with `pkg` or `std`; otherwise the
+    /// file-local module alias that roots it.
     alias_root: Option<PathSegment>,
+    /// Whether the path begins with `std`, the standard library's qualifier
+    /// [MOD-10], rather than `pkg`.
+    standard: bool,
     /// The names written after the root, before the use's own final name.
     /// For an alias they are the complete target after `pkg`.
     segments: Vec<PathSegment>,
@@ -487,13 +490,12 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
                         module: bundle
                             .file(role.origin.coordinate.source())
                             .map_or(crate::ModuleId::BUNDLE_ROOT, crate::SourceFile::module),
-                        interface: bundle.is_module_program()
-                            && bundle
-                                .file(role.origin.coordinate.source())
-                                .is_some_and(|file| {
-                                    file.prelude().is_none()
-                                        && file.role() == crate::SourceRole::Interface
-                                }),
+                        interface: bundle.file(role.origin.coordinate.source()).is_some_and(
+                            |file| {
+                                file.prelude().is_none()
+                                    && file.role() == crate::SourceRole::Interface
+                            },
+                        ),
                         owner: role.owner,
                         origin: role.origin.clone(),
                         scope: role.scope,

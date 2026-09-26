@@ -379,12 +379,15 @@ pub struct IrNominal {
     pub(crate) name: String,
     /// The stable part of the type's link-visible name [MOD-8].
     pub(crate) link_name: String,
+    /// The type's module-qualified spelling, when it has one.
+    pub(crate) stable: Option<String>,
     pub(crate) id: IrNominalId,
     pub(crate) kind: IrNominalKind,
 }
 
 impl IrNominal {
-    /// The ordinary declaration name retained for debug and link descriptions.
+    /// The ordinary declaration name, which tests read.
+    #[cfg(test)]
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -394,6 +397,13 @@ impl IrNominal {
     /// when another type is added or removed [MOD-8].
     pub fn link_name(&self) -> &str {
         &self.link_name
+    }
+
+    /// The type's module-qualified spelling, `std.process.Inputs` for a
+    /// standard library type [MOD-10], which names it apart from any
+    /// program type of the same name.
+    pub fn stable_spelling(&self) -> Option<&str> {
+        self.stable.as_deref()
     }
 
     pub const fn id(&self) -> IrNominalId {

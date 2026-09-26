@@ -1,3 +1,6 @@
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
 enum RuntimeGapNode {
   Empty();
   Entry(left: Box<RuntimeGapNode>, right: Box<RuntimeGapNode>);

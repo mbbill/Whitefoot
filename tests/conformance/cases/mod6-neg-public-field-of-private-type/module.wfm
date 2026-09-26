@@ -1,3 +1,5 @@
+alias ExitStatus = std::process::ExitStatus;
+
 struct Hidden {
   public value: u8;
 }

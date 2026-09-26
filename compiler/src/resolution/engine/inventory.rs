@@ -229,7 +229,7 @@ fn check_inventory(
             child.push(declaration.spelling.clone());
             if modules
                 .iter()
-                .any(|module| module.path() == child.as_slice())
+                .any(|module| module.is_at(parent.package(), &child))
             {
                 return Ok(Some(ResolutionIssue {
                     rule: ResolutionRule::Mod3,

@@ -1,4 +1,6 @@
+alias ExitStatus = std::process::ExitStatus;
 alias Pair = pkg::data::Pair;
+alias exit_status = std::process::exit_status;
 
 fn main() -> status: ExitStatus pure {
   let pair = Pair(left: 1_u8, right: 2_u8);

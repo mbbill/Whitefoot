@@ -1,5 +1,7 @@
-alias kinds = pkg::kinds;
 alias Entry = pkg::kinds::Entry;
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+alias kinds = pkg::kinds;
 
 fn main() -> status: ExitStatus pure {
   doc "ENT-5: the offset i is part of the support of entries[i].width. The outer body reassigns i, so the continuing kill removes the pre-loop bound at the outer head; the second pass selects the wide element and its cell read owes an unproved c < cells.len.";

@@ -565,13 +565,29 @@ pub fn form_module_graph(
     graph: SourceInput<'_>,
     limits: CompilerLimits,
 ) -> Result<crate::ModuleGraph, CompilationFailure> {
+    form_graph_record(
+        graph,
+        limits,
+        crate::Package::Program,
+        Some(&crate::ModuleGraph::library()),
+    )
+}
+
+/// Forms the graph one graph record writes for `package`, its `std`
+/// dependencies naming modules of `library` [MOD-1, MOD-10].
+fn form_graph_record(
+    graph: SourceInput<'_>,
+    limits: CompilerLimits,
+    package: crate::Package,
+    library: Option<&crate::ModuleGraph>,
+) -> Result<crate::ModuleGraph, CompilationFailure> {
     let bundle = SourceBundle::with_limits(&[graph], limits.source)
         .map_err(CompilationFailure::source_envelope)?;
     with_canonical_syntax(
         &bundle,
         limits,
         true,
-        |canonical| match crate::graph::form_graph(&canonical) {
+        |canonical| match crate::graph::form_graph(&canonical, package, library) {
             Ok(Ok(mut graph)) => {
                 graph.locate_entries(|coordinate| {
                     Place::resolve(&bundle, coordinate, Anchor::Start)
@@ -595,6 +611,28 @@ pub fn form_module_graph(
     )
 }
 
+/// `inputs` followed by the records of `graph`'s standard library modules,
+/// which the compiler carries [MOD-10]. A check reads a library record only
+/// when its module is in the check's closure, as it reads every record. An
+/// entry point that another one calls receives the records already, so a
+/// record `inputs` holds is not added again.
+fn with_library_records<'input>(
+    graph: &crate::ModuleGraph,
+    inputs: &[SourceInput<'input>],
+) -> Vec<SourceInput<'input>> {
+    let mut all = inputs.to_vec();
+    all.extend(
+        crate::library::records(graph.modules(), |_| true)
+            .into_iter()
+            .filter(|record| {
+                !inputs
+                    .iter()
+                    .any(|input| input.logical_path() == record.logical_path())
+            }),
+    );
+    all
+}
+
 /// Checks every registered module of a module program against its
 /// dependencies' interfaces, in row order, without selecting an entry, and
 /// returns the first rejected module's failure [MOD-8].
@@ -606,9 +644,8 @@ pub fn check_module_program(
     inputs: &[SourceInput<'_>],
     limits: CompilerLimits,
 ) -> Result<(), CompilationFailure> {
-    let modules = (0..graph.modules().len())
-        .filter_map(crate::ModuleId::from_index)
-        .collect::<Vec<_>>();
+    let inputs = &with_library_records(graph, inputs);
+    let modules = graph.program_modules().collect::<Vec<_>>();
     require_module_verdicts(graph, inputs, &modules, limits, None)
 }
 
@@ -627,6 +664,7 @@ pub fn check_module(
     interface_only: bool,
     limits: CompilerLimits,
 ) -> Result<(), CompilationFailure> {
+    let inputs = &with_library_records(graph, inputs);
     let target = registered_module(graph, module)?;
     let selected = module_check_inputs(graph, inputs, target, interface_only);
     with_checked_program(&selected, Some(graph.modules()), limits, |_, _| Ok(()))
@@ -648,6 +686,7 @@ pub fn render_module_interface(
     module: &str,
     limits: CompilerLimits,
 ) -> Result<String, CompilationFailure> {
+    let inputs = &with_library_records(graph, inputs);
     let target = registered_module(graph, module)?;
     let selected = module_check_inputs(graph, inputs, target, true);
     with_checked_program(&selected, Some(graph.modules()), limits, |checked, _| {
@@ -866,6 +905,7 @@ pub fn module_verdict(
     limits: CompilerLimits,
     cache: Option<&BuildCache>,
 ) -> Result<CheckVerdict, CompilationFailure> {
+    let inputs = &with_library_records(graph, inputs);
     let target = registered_module(graph, module)?;
     let check = ModuleCheck::new(graph, inputs, target, interface_only);
     if let Some(cache) = cache
@@ -1683,6 +1723,7 @@ pub fn entry_verdict(
     cache: Option<&BuildCache>,
     known: &[CheckVerdict],
 ) -> Result<CheckVerdict, CompilationFailure> {
+    let inputs = &with_library_records(graph, inputs);
     let subject = match entry {
         ModuleEntry::Named(name) => name.to_owned(),
         ModuleEntry::Function { module, function } => format!("{module}::{function}"),
@@ -1884,6 +1925,9 @@ fn push_graph_facts(
         }
         material.push(b'\n');
     }
+    // A child is registered in its parent's package: a program module never
+    // sits below a standard library module, nor one below a program module
+    // [MOD-10].
     let mut children = records
         .iter()
         .filter(|record| {
@@ -1891,7 +1935,7 @@ fn push_graph_facts(
                 modules.iter().any(|module| {
                     records
                         .get(module.index())
-                        .is_some_and(|record| record.path() == parent)
+                        .is_some_and(|candidate| candidate.is_at(record.package(), parent))
                 })
             })
         })
@@ -2088,6 +2132,7 @@ pub fn check_module_entry(
     entry: ModuleEntry<'_>,
     limits: CompilerLimits,
 ) -> Result<(), CompilationFailure> {
+    let inputs = &with_library_records(graph, inputs);
     let selection = entry_selection(graph, entry)?;
     let (modules, selected) = composition_inputs(graph, inputs, selection.module);
     require_module_verdicts(graph, inputs, &modules, limits, None)?;
@@ -2164,6 +2209,7 @@ pub fn build_module_entry(
     overlap: crate::OverlapLowering,
     cache: Option<&BuildCache>,
 ) -> Result<(String, bool), CompilationFailure> {
+    let inputs = &with_library_records(graph, inputs);
     let selection = entry_selection(graph, entry)?;
     let (modules, selected) = composition_inputs(graph, inputs, selection.module);
     let mut material = composition_material(

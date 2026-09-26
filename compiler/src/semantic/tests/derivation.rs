@@ -18,8 +18,8 @@ fn a_derived_binding_still_faces_its_consumer_s_exactness_rule() {
   return value;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Fn1,
@@ -44,8 +44,8 @@ fn a_second_give_of_another_type_rejects_at_that_give() {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Give1,
@@ -72,8 +72,8 @@ fn an_empty_delivery_set_rejects_at_the_let_statement() {
   return picked;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Give1,
@@ -86,10 +86,10 @@ fn main() -> status: ExitStatus pure {
 /// is; [TYPE-5] therefore makes them mandatory in every position.
 #[test]
 fn a_nullary_prelude_construction_types_itself_from_written_arguments() {
-    let source = br#"fn main() -> status: ExitStatus pure {
+    let source = br#"fn main() -> status: std::process::ExitStatus pure {
   let absent = None<Array<u8, 2>>();
   let present = Some<i32>(value: 7_i32);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -114,9 +114,9 @@ fn a_nullary_prelude_construction_types_itself_from_written_arguments() {
 #[test]
 fn a_prelude_construction_without_its_arguments_rejects_at_the_construct() {
     assert_rule_kind(
-        br#"fn main() -> status: ExitStatus pure {
+        br#"fn main() -> status: std::process::ExitStatus pure {
   let absent = None();
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Type5,
@@ -126,11 +126,11 @@ fn a_prelude_construction_without_its_arguments_rejects_at_the_construct() {
 
 #[test]
 fn a_result_construction_writes_both_of_its_arguments() {
-    let source = br#"fn main() -> status: ExitStatus pure {
+    let source = br#"fn main() -> status: std::process::ExitStatus pure {
   let good = Ok<i32, Overflow>(value: 1_i32);
   let flag = Overflow();
   let bad = Err<i32, Overflow>(error: flag);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -161,8 +161,8 @@ fn a_written_type_argument_on_a_derived_operation_rejects() {
   return imin::<i32>(x, y);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Op1,
@@ -180,8 +180,8 @@ fn disagreeing_operands_cite_type5_at_the_second_operand_atom() {
   return imin(x, y);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Type5,
@@ -199,8 +199,8 @@ fn a_first_operand_outside_the_closed_set_cites_op1() {
   return imin(x, y);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Op1,
