@@ -2890,7 +2890,7 @@ fn an_effect_row_defect_names_its_condition_and_the_row_that_repairs_it() {
         );
     assert!(
             detail.contains(
-                "\n  mechanical_fix: delete the repeated entry; `writes(p)` already subsumes `reads(p)`, so the pair is never written for one path"
+                "\n  mechanical_fix: delete the repeated entry"
             ),
             "{detail}"
         );

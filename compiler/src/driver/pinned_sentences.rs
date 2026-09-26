@@ -645,7 +645,7 @@ fn main() -> status: ExitStatus pure {
         rule: "EFF-1",
         sentences: &[
             "]: InvalidEffectRow\n",
-            "\n  reason: a row lists each path at most once per category, and this entry repeats one\n  mechanical_fix: delete the repeated entry; `writes(p)` already subsumes `reads(p)`, so the pair is never written for one path\n",
+            "\n  reason: a row lists each path at most once per category, and this entry repeats one\n  mechanical_fix: delete the repeated entry\n",
         ],
     },
     Probe {

@@ -46,7 +46,7 @@ const EFF1_CATEGORY_ORDER: &str =
 const EFF1_CATEGORY_ORDER_FIX: &str = "write every `reads` entry before the first `writes` entry, and delete each entry whose path is a `writes` entry's path or lies below it, which that `writes` already covers";
 const EFF1_REPEATED_PATH: &str =
     "a row lists each path at most once per category, and this entry repeats one";
-const EFF1_REPEATED_PATH_FIX: &str = "delete the repeated entry; `writes(p)` already subsumes `reads(p)`, so the pair is never written for one path";
+const EFF1_REPEATED_PATH_FIX: &str = "delete the repeated entry";
 const EFF1_NON_PARAMETER_ROOT: &str = "every effect path is rooted at one formal value parameter of the same callable, and this root is not one";
 const EFF1_NON_PARAMETER_ROOT_FIX: &str = "root the path at a parameter of this function; a local, a result binder, a region, and an unrelated declaration are never effect roots";
 const EFF1_FIELD_OF_NON_STRUCT: &str = "each effect-path suffix must select a field, payload, measure, window part, or indexed position admitted by its prefix type";
