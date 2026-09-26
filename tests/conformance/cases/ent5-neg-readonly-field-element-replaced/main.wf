@@ -1,5 +1,7 @@
-alias kinds = pkg::kinds;
 alias Entry = pkg::kinds::Entry;
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+alias kinds = pkg::kinds;
 
 fn main() -> status: ExitStatus pure {
   doc "ENT-5: replacing the whole element writes a place containing its readonly field, so the guard's bound on entries[i].width dies; the endpoint then reads the replacement's width and the cell read owes an unproved c < cells.len.";

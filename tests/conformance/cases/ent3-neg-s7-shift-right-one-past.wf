@@ -1,3 +1,6 @@
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
 fn high_half(word: u64) -> result: u32 pure {
   let high = ishr(word, 31_u32);
   let narrow = cvt::<u64, u32>(high);

@@ -1,3 +1,6 @@
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
 fn within(value: i32, low: i32, high: i32) -> result: unit pure contract {
   requires low <= value;
   requires value <= high;

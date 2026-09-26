@@ -689,7 +689,7 @@ specification's word; it is optional.
 
 ## Implementation
 
-Option (b) landed as specification v0.72 with the minimum repair set, the
+Option (b) landed as specification v0.73 with the minimum repair set, the
 MSR-4 goal rules (FN-9 gains a repair) and OWN-8's rejections. It departs
 from section 4 where carrying it out showed a gap:
 
@@ -698,7 +698,7 @@ from section 4 where carrying it out showed a gap:
   routes of a goal over computed values: an invariant's `use` steps or a
   callee's `ensures` succeed only when facts exist that the checker cannot
   guess, so an unconditional requirement would forbid the routes a writer
-  needs most. v0.72 reads "Carried out as it directs, each alternative lets
+  needs most. v0.73 reads "Carried out as it directs, each alternative lets
   the rejected judgment succeed at that construct in a state that is not
   contradictory; an alternative that does so only when the program meets a
   condition the checker has neither established nor refuted states that

@@ -1,5 +1,7 @@
-alias kinds = pkg::kinds;
 alias Entry = pkg::kinds::Entry;
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+alias kinds = pkg::kinds;
 
 fn main() -> status: ExitStatus pure {
   doc "ENT-2: every offset of a clause (b) place must itself be a tracked place or a constant, because only then does a change to it kill the term. slots[0] is an element read, so entries[slots[0]].width is no term and the endpoint is rejected with the let-binding restructuring.";

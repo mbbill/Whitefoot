@@ -1,3 +1,6 @@
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
 enum Choice {
   Short(values: Slots<u8, 4>);
   Long(values: Slots<u8, 8>);

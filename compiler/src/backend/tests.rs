@@ -842,11 +842,11 @@ fn wide_payload() -> result: Payload pure {
   return Payload::Wide(first: 511_u64, last: 127_u8);
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let flag = Flag::On();
   match flag {
     Off() => {
-      return exit_status(code: 1_u8);
+      return std::process::exit_status(code: 1_u8);
     }
     On() => {
     }
@@ -854,44 +854,44 @@ fn main() -> status: ExitStatus pure {
   let payload = number_payload();
   match payload {
     Empty() => {
-      return exit_status(code: 2_u8);
+      return std::process::exit_status(code: 2_u8);
     }
     Value(number: value) => {
       if value != 42_i32 {
-        return exit_status(code: 3_u8);
+        return std::process::exit_status(code: 3_u8);
       }
     }
     Wide(first: first_word, last: last_byte) => {
-      return exit_status(code: 4_u8);
+      return std::process::exit_status(code: 4_u8);
     }
   }
   match empty_payload() {
     Empty() => {
     }
     Value(number: value) => {
-      return exit_status(code: 5_u8);
+      return std::process::exit_status(code: 5_u8);
     }
     Wide(first: first_word, last: last_byte) => {
-      return exit_status(code: 6_u8);
+      return std::process::exit_status(code: 6_u8);
     }
   }
   match wide_payload() {
     Empty() => {
-      return exit_status(code: 7_u8);
+      return std::process::exit_status(code: 7_u8);
     }
     Value(number: value) => {
-      return exit_status(code: 8_u8);
+      return std::process::exit_status(code: 8_u8);
     }
     Wide(first: first_word, last: last_byte) => {
       if first_word != 511_u64 {
-        return exit_status(code: 9_u8);
+        return std::process::exit_status(code: 9_u8);
       }
       if last_byte != 127_u8 {
-        return exit_status(code: 10_u8);
+        return std::process::exit_status(code: 10_u8);
       }
     }
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let llvm = emit(source);
@@ -1006,13 +1006,13 @@ fn cleanup_match(value: Holder, flag: Bool) -> result: i32 pure {
   return selected;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   cleanup();
   let cell = Cell(value: 8_i32);
   let holder = Holder::Held(cell: move cell);
   let flag = True();
   cleanup_match(value: move holder, flag: flag);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let llvm = emit(source);
@@ -1047,7 +1047,7 @@ struct Outer {
   other: i32;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let number = 1_i32;
   let inner = Inner(value: 2_i32);
   let outer = Outer(inner: inner, other: 7_i32);
@@ -1061,11 +1061,11 @@ fn main() -> status: ExitStatus pure {
   }
   let observed = outer.inner.value;
   if observed != 42_i32 {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
   let preserved = outer.other;
   if preserved != 7_i32 {
-    return exit_status(code: 2_u8);
+    return std::process::exit_status(code: 2_u8);
   }
   let selected = if flag {
     set number = 43_i32;
@@ -1075,12 +1075,12 @@ fn main() -> status: ExitStatus pure {
     give number;
   }
   if selected != 43_i32 {
-    return exit_status(code: 3_u8);
+    return std::process::exit_status(code: 3_u8);
   }
   if number != 43_i32 {
-    return exit_status(code: 4_u8);
+    return std::process::exit_status(code: 4_u8);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let llvm = emit(source);
@@ -1135,11 +1135,11 @@ fn main() -> status: ExitStatus pure {
 /// is no implicit runtime fallback.
 #[test]
 fn bare_infix_overflow_is_a_static_op2_rejection() {
-    let source = br#"fn main() -> status: ExitStatus pure {
+    let source = br#"fn main() -> status: std::process::ExitStatus pure {
   let hi = 2147483647_i32;
   let one = 1_i32;
   let overflowed = hi + one;
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let failure = compile_rejection(source);
@@ -1204,11 +1204,11 @@ fn make_pair() -> result: Result<Pair, StepError> pure {
   return Ok<Pair, StepError>(value: pair);
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let arithmetic_result = 2147483647_i32 +checked 1_i32;
   match arithmetic_result {
     Ok(value: sum) => {
-      return exit_status(code: 1_u8);
+      return std::process::exit_status(code: 1_u8);
     }
     Err(error: overflow) => {
     }
@@ -1216,7 +1216,7 @@ fn main() -> status: ExitStatus pure {
   let subtract_result = 0_u8 -checked 1_u8;
   match subtract_result {
     Ok(value: difference) => {
-      return exit_status(code: 2_u8);
+      return std::process::exit_status(code: 2_u8);
     }
     Err(error: underflow) => {
     }
@@ -1225,28 +1225,28 @@ fn main() -> status: ExitStatus pure {
   match multiply_result {
     Ok(value: product) => {
       if product != 42_i16 {
-        return exit_status(code: 3_u8);
+        return std::process::exit_status(code: 3_u8);
       }
     }
     Err(error: product_error) => {
-      return exit_status(code: 4_u8);
+      return std::process::exit_status(code: 4_u8);
     }
   }
   let success = forward(value: 7_i32);
   match success {
     Ok(value: answer) => {
       if answer != 42_i64 {
-        return exit_status(code: 5_u8);
+        return std::process::exit_status(code: 5_u8);
       }
     }
     Err(error: failure_error) => {
-      return exit_status(code: 6_u8);
+      return std::process::exit_status(code: 6_u8);
     }
   }
   let failure = forward(value: -1_i32);
   match failure {
     Ok(value: unexpected) => {
-      return exit_status(code: 7_u8);
+      return std::process::exit_status(code: 7_u8);
     }
     Err(error: forwarded_error) => {
     }
@@ -1255,17 +1255,17 @@ fn main() -> status: ExitStatus pure {
   match field_success {
     Ok(value: field_answer) => {
       if field_answer != 42_i64 {
-        return exit_status(code: 8_u8);
+        return std::process::exit_status(code: 8_u8);
       }
     }
     Err(error: field_failure) => {
-      return exit_status(code: 9_u8);
+      return std::process::exit_status(code: 9_u8);
     }
   }
   let field_failure = forward_field(value: -1_i32);
   match field_failure {
     Ok(value: field_unexpected) => {
-      return exit_status(code: 10_u8);
+      return std::process::exit_status(code: 10_u8);
     }
     Err(error: field_forwarded_error) => {
     }
@@ -1275,14 +1275,14 @@ fn main() -> status: ExitStatus pure {
     Ok(value: pair) => {
       let total = pair.left +wrap pair.right;
       if total != 42_i32 {
-        return exit_status(code: 11_u8);
+        return std::process::exit_status(code: 11_u8);
       }
     }
     Err(error: pair_error) => {
-      return exit_status(code: 12_u8);
+      return std::process::exit_status(code: 12_u8);
     }
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
@@ -1297,11 +1297,11 @@ fn main() -> status: ExitStatus pure {
 
 #[test]
 fn integer_overflow_has_no_op2_runtime_record_path() {
-    let source = br#"fn main() -> status: ExitStatus pure {
+    let source = br#"fn main() -> status: std::process::ExitStatus pure {
   let hi = 127_i8;
   let one = 1_i8;
   let overflow = hi + one;
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let failure = compile_rejection(source);

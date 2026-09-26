@@ -1,3 +1,6 @@
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
 fn nonnegative(value: i32) -> result: unit pure contract {
   requires 0_i32 <= value;
 } {

@@ -161,9 +161,9 @@ fn partition(width: u64, padding: u64, base: u64) -> result: Box<Array<u64>> pur
   return move values;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = partition(width: 3_u64, padding: 2_u64, base: 1_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
 
@@ -316,9 +316,9 @@ fn partition(width: u64, padding: u64, base: u64) -> result: Box<Array<u64>> pur
   return move values;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = partition(width: 3_u64, padding: 2_u64, base: 1_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let judged = permitted(source, "partition");
@@ -484,9 +484,9 @@ fn shifted(n: u64) -> result: Box<Array<u64>> pure contract {
   return move values;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = shifted(n: 4_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
 
@@ -628,7 +628,7 @@ fn a_counted_reduction_over_a_pure_callee_is_permitted_and_eligible() {
   return low == 3_u64;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let hits = 0_u64;
   for @scan (i in 0_u64..4096_u64) {
     let escaped = interesting(index: i);
@@ -636,7 +636,7 @@ fn main() -> status: ExitStatus pure {
       set hits = hits +wrap 1_u64;
     }
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let judged = permitted(source, "main");
@@ -651,13 +651,13 @@ fn main() -> status: ExitStatus pure {
 /// read, write, accumulator, or exit to the loop permission survey.
 #[test]
 fn a_local_invariant_in_the_body_has_no_runtime_footprint() {
-    let source = br#"fn main() -> status: ExitStatus pure {
+    let source = br#"fn main() -> status: std::process::ExitStatus pure {
   let total = 0_u64;
   for @sum (i in 0_u64..4_u64) {
     invariant two_steps: 0_u64 <= 2_u64;
     set total = total +wrap i;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let judged = permitted(source, "main");
@@ -690,12 +690,12 @@ fn each_admitted_combine_permits_its_loop_and_is_named() {
         ("imax", "0_u64", "imax(total, i)"),
     ] {
         let source = format!(
-            "fn main() -> status: ExitStatus pure {{
+            "fn main() -> status: std::process::ExitStatus pure {{
   let total = {initial};
   for @sum (i in 0_u64..16_u64) {{
     set total = {step};
   }}
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }}
 "
         );
@@ -708,14 +708,14 @@ fn each_admitted_combine_permits_its_loop_and_is_named() {
         ("bxor", "False()", "bxor(every, bit)"),
     ] {
         let source = format!(
-            "fn main() -> status: ExitStatus pure {{
+            "fn main() -> status: std::process::ExitStatus pure {{
   let every = {initial};
   for @scan (i in 0_u64..16_u64) {{
     let low = iand(i, 1_u64);
     let bit = low == 0_u64;
     set every = {step};
   }}
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }}
 "
         );
@@ -736,11 +736,11 @@ fn a_counted_loop_carrying_nothing_is_permitted_with_no_accumulator() {
   return x *wrap 3_u64;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   for @scan (i in 0_u64..16_u64) {
     let seen = work(x: i);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let judged = permitted(source, "main");
@@ -770,14 +770,14 @@ fn bump(slot: &Cell, x: u64) -> result: u64 writes(slot.value) {
   return deref(slot).value;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let total = 0_u64;
   for @sum (i in 0_u64..16_u64) {
     let scratch = Cell(value: 0_u64);
     let got = bump(slot: &scratch, x: i);
     set total = total +wrap got;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let judged = permitted(source, "main");
@@ -791,13 +791,13 @@ fn main() -> status: ExitStatus pure {
 /// `replace` statement is gone and `set p = e;` is its successor.
 #[test]
 fn a_set_of_iteration_own_storage_is_permitted() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   for @swap (i in 0_u64..8_u64) {
     let held = array_filled::<u64, 4>(value: 0_u64);
     let fresh = array_filled::<u64, 4>(value: i);
     set held = fresh;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     permitted(source, "main");
@@ -811,14 +811,14 @@ fn a_set_of_iteration_own_storage_is_permitted() {
 /// each part.
 #[test]
 fn nested_counted_loops_are_each_judged_on_their_own_terms() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let total = 0_u64;
   for @rows (r in 0_u64..8_u64) {
     for @cols (c in 0_u64..8_u64) {
       set total = total +wrap c;
     }
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let table = permission_of(source);
@@ -836,14 +836,14 @@ fn nested_counted_loops_are_each_judged_on_their_own_terms() {
 /// iterations would repeatedly write the same element and is denied.
 #[test]
 fn a_nested_map_is_granted_only_to_the_binder_in_its_retained_image() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let out = array_filled::<u64, 8>(value: 0_u64);
   for @rows (r in 0_u64..8_u64) {
     for @cols (c in 0_u64..4_u64) {
       set out[r] = c;
     }
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let table = permission_of(source);
@@ -877,11 +877,11 @@ fn an_unproved_source_premise_cannot_authorize_a_loop_subscript() {
   return total;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u64, 64>(value: 1_u64);
   let data = slots_from_array::<u64, 64>(values: values);
   let t = tally(src: &data, limit: 64_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -914,11 +914,11 @@ fn a_dominating_bound_outside_the_loop_leaves_it_eligible() {
   return total;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u64, 64>(value: 1_u64);
   let data = slots_from_array::<u64, 64>(values: values);
   let t = tally(src: &data, limit: 64_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let judged = permitted(source, "tally");
@@ -938,13 +938,13 @@ fn main() -> status: ExitStatus pure {
 /// the writer wrote.
 #[test]
 fn a_float_accumulator_is_denied_by_condition_one() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let total = 0.0_f64;
   let step = 0.5_f64;
   for @sum (i in 0_u64..1024_u64) {
     set total = fadd.strict(total, step);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     assert!(matches!(
@@ -954,13 +954,13 @@ fn a_float_accumulator_is_denied_by_condition_one() {
 
     // The identical loop over an integer accumulator is permitted, so the
     // refusal above is about the operation and not about the loop.
-    let integral = b"fn main() -> status: ExitStatus pure {
+    let integral = b"fn main() -> status: std::process::ExitStatus pure {
   let total = 0_u64;
   let step = 5_u64;
   for @sum (i in 0_u64..1024_u64) {
     set total = total +wrap step;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     assert_eq!(permitted(integral, "main").combines, vec!["+wrap"]);
@@ -971,13 +971,13 @@ fn a_float_accumulator_is_denied_by_condition_one() {
 /// regrouping moves. `+sat` is the pointed one: it is not even associative.
 #[test]
 fn a_saturating_accumulator_is_denied_by_condition_one() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let total = 0_u64;
   for @sum (i in 0_u64..16_u64) {
     let step = 1_u64;
     set total = total +sat step;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     assert!(matches!(
@@ -997,13 +997,13 @@ fn a_fold_through_a_callee_is_denied_by_condition_one() {
   return fadd.strict(acc, x);
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let total = 0.0_f64;
   for @sum (i in 0_u64..16_u64) {
     let step = 0.5_f64;
     set total = blend(acc: total, x: step);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     assert!(matches!(
@@ -1016,12 +1016,12 @@ fn main() -> status: ExitStatus pure {
 /// the previous value, so which iteration wrote last would be observable.
 #[test]
 fn carried_state_that_is_no_reduction_is_denied_by_condition_one() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let prev = 0_u64;
   for @walk (i in 0_u64..16_u64) {
     set prev = i *wrap 3_u64;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     assert!(matches!(
@@ -1038,13 +1038,13 @@ fn carried_state_that_is_no_reduction_is_denied_by_condition_one() {
 /// releases the old affine value in place [WIN-3].
 #[test]
 fn a_set_of_enclosing_storage_is_denied_by_condition_one() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let held = array_filled::<u64, 4>(value: 0_u64);
   for @swap (i in 0_u64..8_u64) {
     let fresh = array_filled::<u64, 4>(value: i);
     set held = fresh;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     assert!(matches!(
@@ -1057,13 +1057,13 @@ fn a_set_of_enclosing_storage_is_denied_by_condition_one() {
 /// what the later read sees is the running total, which no split reproduces.
 #[test]
 fn an_accumulator_read_outside_its_combine_is_denied_by_condition_one() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let total = 0_u64;
   for @sum (i in 0_u64..16_u64) {
     let doubled = total +wrap i;
     set total = total +wrap doubled;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let LoopDenial::AccumulatorRead { reads, .. } = denied(source, "main", 1) else {
@@ -1081,7 +1081,7 @@ fn an_accumulator_read_outside_its_combine_is_denied_by_condition_one() {
 /// stops depending on that coincidence.
 #[test]
 fn an_accumulator_read_in_a_write_subscript_is_denied_by_condition_one() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let table = array_filled::<u64, 64>(value: 0_u64);
   let cursor = 0_u64;
   for @fill (i in 0_u64..8_u64) {
@@ -1091,7 +1091,7 @@ fn an_accumulator_read_in_a_write_subscript_is_denied_by_condition_one() {
     }
     set cursor = cursor +wrap 1_u64;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let LoopDenial::AccumulatorRead { reads, .. } = denied(source, "main", 1) else {
@@ -1109,7 +1109,7 @@ fn an_accumulator_read_in_a_write_subscript_is_denied_by_condition_one() {
 /// names the accumulator's path, and the ordinary count is what denies.
 #[test]
 fn a_reference_to_the_accumulator_is_a_read_of_it() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let total = 0_u64;
   for @sum (i in 0_u64..16_u64) {
     let view = &total;
@@ -1117,7 +1117,7 @@ fn a_reference_to_the_accumulator_is_a_read_of_it() {
     let bumped = seen +wrap i;
     set total = total +wrap i;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let LoopDenial::AccumulatorRead { reads, .. } = denied(source, "main", 1) else {
@@ -1127,7 +1127,7 @@ fn a_reference_to_the_accumulator_is_a_read_of_it() {
 
     // A reference taken *after* the loop is outside the body, so the same
     // reduction stays permitted: the count is per body, never per function.
-    let after = b"fn main() -> status: ExitStatus pure {
+    let after = b"fn main() -> status: std::process::ExitStatus pure {
   let total = 0_u64;
   for @sum (i in 0_u64..16_u64) {
     set total = total +wrap i;
@@ -1135,7 +1135,7 @@ fn a_reference_to_the_accumulator_is_a_read_of_it() {
   let view = &total;
   let seen = deref(view);
   let bumped = seen +wrap 1_u64;
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     permitted(after, "main");
@@ -1145,14 +1145,14 @@ fn a_reference_to_the_accumulator_is_a_read_of_it() {
 /// outlives: a hand-written recursion may return an aggregate.
 #[test]
 fn two_accumulators_are_denied_by_condition_one_and_keep_the_split_advice() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let total = 0_u64;
   let mask = 0_u64;
   for @sum (i in 0_u64..16_u64) {
     set total = total +wrap i;
     set mask = ior(mask, i);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let table = permission_of(source);
@@ -1172,14 +1172,14 @@ fn two_accumulators_are_denied_by_condition_one_and_keep_the_split_advice() {
 /// [FN-1], so splitting the inner loop is sound whatever the outer one does.
 #[test]
 fn a_nested_endpoint_reading_the_accumulator_denies_only_the_outer_loop() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let total = 0_u64;
   for @rows (r in 0_u64..8_u64) {
     for @cols (c in 0_u64..total) {
       set total = total +wrap c;
     }
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let table = permission_of(source);
@@ -1202,12 +1202,12 @@ fn a_nested_endpoint_reading_the_accumulator_denies_only_the_outer_loop() {
 /// disjoint range `[i, i + 1)`.
 #[test]
 fn a_proven_counted_binder_element_map_is_permitted() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let out = array_filled::<u64, 64>(value: 0_u64);
   for @fill (i in 0_u64..64_u64) {
     set out[i] = i *wrap i;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let judged = permitted(source, "main");
@@ -1260,14 +1260,14 @@ fn ring_map() -> result: u64 pure {
 /// elements.
 #[test]
 fn a_copied_affine_binder_element_map_is_permitted() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let out = array_filled::<u64, 128>(value: 0_u64);
   for @fill (i in 0_u64..64_u64) {
     let step = i;
     let slot = step * 2_u64;
     set out[slot] = i;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let judged = permitted(source, "main");
@@ -1282,14 +1282,14 @@ fn a_copied_affine_binder_element_map_is_permitted() {
 /// exact coefficient and constant computed at that program point.
 #[test]
 fn op4_retains_the_affine_index_map_consumed_by_parallel_permission() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let out = array_filled::<u64, 128>(value: 0_u64);
   for @fill (i in 0_u64..64_u64) {
     let step = i;
     let slot = step * 2_u64;
     set out[slot] = i;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     with_semantics(source, |outcome| {
@@ -1322,13 +1322,13 @@ fn op4_retains_the_affine_index_map_consumed_by_parallel_permission() {
 /// the element access itself, but PAR-2 correctly keeps the whole-root write.
 #[test]
 fn a_zero_coefficient_element_map_is_denied() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let out = array_filled::<u64, 64>(value: 0_u64);
   for @fill (i in 0_u64..64_u64) {
     let slot = i - i;
     set out[slot] = i;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     assert!(matches!(
@@ -1363,8 +1363,8 @@ fn grow_owner(owner: &Box<Slots<u8>>) -> result: unit writes(owner) contract {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert!(matches!(
@@ -1382,7 +1382,7 @@ fn main() -> status: ExitStatus pure {
 /// mapped root to carry the same coefficient and constant.
 #[test]
 fn two_different_affine_maps_of_one_root_are_denied() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let out = array_filled::<u64, 128>(value: 0_u64);
   for @fill (i in 0_u64..64_u64) {
     let even = i * 2_u64;
@@ -1390,7 +1390,7 @@ fn two_different_affine_maps_of_one_root_are_denied() {
     set out[even] = i;
     set out[odd] = i;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     assert!(matches!(
@@ -1404,14 +1404,14 @@ fn two_different_affine_maps_of_one_root_are_denied() {
 /// on a distinct element.
 #[test]
 fn repeated_writes_with_the_same_affine_map_are_permitted() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let out = array_filled::<u64, 128>(value: 0_u64);
   for @fill (i in 0_u64..64_u64) {
     let slot = i * 2_u64;
     set out[slot] = i;
     set out[slot] = i;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let judged = permitted(source, "main");
@@ -1426,14 +1426,14 @@ fn repeated_writes_with_the_same_affine_map_are_permitted() {
 /// write image; this is not treated as a whole-run dependence.
 #[test]
 fn a_same_index_read_modify_write_is_permitted() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let out = array_filled::<u8, 64>(value: 0_u8);
   for @update (i in 0_u64..64_u64) {
     let old = out[i];
     let next = old +wrap 1_u8;
     set out[i] = next;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let judged = permitted(source, "main");
@@ -1448,14 +1448,14 @@ fn a_same_index_read_modify_write_is_permitted() {
 /// condition 2 fail-closed.
 #[test]
 fn a_whole_collection_read_still_denies_a_same_map_update() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let out = array_filled::<u8, 64>(value: 0_u8);
   for @update (i in 0_u64..64_u64) {
     let spare = out.len;
     let old = out[i];
     set out[i] = old +wrap 1_u8;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     assert!(matches!(
@@ -1481,11 +1481,11 @@ fn a_reference_output_accepts_a_proved_element_map() {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u8, 64>(value: 0_u8);
   let out = slots_from_array::<u8, 64>(values: values);
   let filled = fill(out: &out, count: 64_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let judged = permitted(source, "fill");
@@ -1511,8 +1511,8 @@ fn a_nested_range_element_map_requires_matching_read_and_write_indices() {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let judged = permitted(source.as_bytes(), "update");
@@ -1535,7 +1535,7 @@ fn main() -> status: ExitStatus pure {
 /// distinct roots disjoint, so each may use its own injective affine image.
 #[test]
 fn different_owned_roots_may_use_different_affine_maps() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let evens = array_filled::<u64, 128>(value: 0_u64);
   let shifted = array_filled::<u64, 65>(value: 0_u64);
   for @fill (i in 0_u64..64_u64) {
@@ -1544,7 +1544,7 @@ fn different_owned_roots_may_use_different_affine_maps() {
     set evens[even] = i;
     set shifted[next] = i;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let judged = permitted(source, "main");
@@ -1565,7 +1565,7 @@ fn sibling_collection_roots_may_read_and_write_their_own_maps() {
   right: Array<u64, 64>;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let left = array_filled::<u64, 64>(value: 0_u64);
   let right = array_filled::<u64, 64>(value: 0_u64);
   let columns = Columns(left: left, right: right);
@@ -1576,7 +1576,7 @@ fn main() -> status: ExitStatus pure {
     let old_right = columns.right[next];
     set columns.right[next] = old_right +wrap 1_u64;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let judged = permitted(source, "main");
@@ -1591,14 +1591,14 @@ fn main() -> status: ExitStatus pure {
 /// payload; no synthetic map accumulator is introduced.
 #[test]
 fn an_exact_map_with_a_reduction_uses_reduction_actualization() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let out = array_filled::<u64, 64>(value: 0_u64);
   let total = 0_u64;
   for @fill (i in 0_u64..64_u64) {
     set out[i] = i *wrap i;
     set total = total +wrap i;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let judged = permitted(source, "main");
@@ -1627,10 +1627,10 @@ fn an_unproved_source_premise_is_rejected_before_affine_map_permission() {
   return output;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let output = array_filled::<u64, 64>(value: 0_u64);
   let filled = fill(output: output, limit: 64_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -1658,13 +1658,13 @@ fn a_read_row_on_the_mapped_root_is_denied() {
   return deref(value).len;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let out = array_filled::<u64, 64>(value: 0_u64);
   for @fill (i in 0_u64..64_u64) {
     let seen = observe(value: &out);
     set out[i] = i;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     assert!(matches!(
@@ -1678,13 +1678,13 @@ fn main() -> status: ExitStatus pure {
 /// fail-closed permission verdict without changing ordinary source acceptance.
 #[test]
 fn an_unproved_counted_binder_element_map_remains_denied() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let out = array_filled::<u64, 64>(value: 0_u64);
   for @fill (i in 0_u64..64_u64) {
     let slot = i + 1_u64;
     set out[slot] = i;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let table = dark_permission_of(source);
@@ -1700,13 +1700,13 @@ fn an_unproved_counted_binder_element_map_remains_denied() {
 /// being distinguishable.
 #[test]
 fn a_non_injective_element_write_is_denied_by_condition_two() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let out = array_filled::<u64, 64>(value: 0_u64);
   for @fill (i in 0_u64..64_u64) {
     let slot = iand(i, 7_u64);
     set out[slot] = i;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let table = permission_of(source);
@@ -1720,13 +1720,13 @@ fn a_non_injective_element_write_is_denied_by_condition_two() {
 /// same-map refinement refuses it.
 #[test]
 fn a_stencil_is_denied_by_condition_two() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let out = array_filled::<u64, 64>(value: 1_u64);
   for @fill (i in 1_u64..64_u64) {
     let prior = i -wrap 1_u64;
     set out[i] = out[prior];
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let table = permission_of(source);
@@ -1751,14 +1751,14 @@ fn accum(slot: &Holder, x: f64) -> result: u64 writes(slot.value) {
   return iand(bits, 1_u64);
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let total = Holder(value: 0.0_f64);
   let count = 0_u64;
   for @sum (i in 0_u64..8_u64) {
     let one = accum(slot: &total, x: 0.5_f64);
     set count = count +wrap one;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     assert!(matches!(
@@ -1831,13 +1831,13 @@ fn a_pure_expression_statement_call_is_permitted_as_its_let_bound_call() {
   return x *wrap 3_u64;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let total = 0_u64;
   for @sum (i in 0_u64..4_u64) {
     {call}work(x: i);
     set total = total +wrap i;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let (condition, actualization, combines, _) =
@@ -1883,9 +1883,9 @@ fn rows(width: u64) -> result: Box<Array<u64>> pure contract {
   return move values;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = rows(width: 5_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let (condition, actualization, _, _) = same_verdict_for_both_call_forms(template, "rows");
@@ -1904,13 +1904,13 @@ fn a_discarded_affine_result_is_permitted_as_its_let_bound_call() {
   return move made;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let total = 0_u64;
   for @sum (i in 0_u64..4_u64) {
     {call}scratch(x: i);
     set total = total +wrap i;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     // The fixture must reach the releasing expression-statement form, or it
@@ -1964,12 +1964,12 @@ fn bump(slot: &Cell, x: u64) -> result: u64 writes(slot.value) {
   return deref(slot).value;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let shared = Cell(value: 0_u64);
   for @sum (i in 0_u64..4_u64) {
     {call}bump(slot: &shared, x: i);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let (condition, actualization, _, _) = same_verdict_for_both_call_forms(template, "main");
@@ -1995,10 +1995,10 @@ fn main() -> status: ExitStatus pure {
 /// path, and that place is neither iteration-own nor a proved range.
 #[test]
 fn an_ordinary_directory_wrapper_writes_enclosing_storage() {
-    let source = br#"fn probe(factory: &HandleFactory, root: &DirectoryRead) -> result: u64 reads(root), writes(factory) {
-  match open_directory_source(factory: factory, directory: root) {
+    let source = br#"fn probe(factory: &std::io::HandleFactory, root: &std::fs::DirectoryRead) -> result: u64 reads(root), writes(factory) {
+  match std::fs::open_directory_source(factory: factory, directory: root) {
     Ok(value: listing) => {
-      let closed = close_directory_source(factory: factory, source: move listing);
+      let closed = std::fs::close_directory_source(factory: factory, source: move listing);
       return 1_u64;
     }
     Err(error: refused) => {
@@ -2007,7 +2007,7 @@ fn an_ordinary_directory_wrapper_writes_enclosing_storage() {
   }
 }
 
-fn main(factory: &HandleFactory, root: &DirectoryRead) -> result: unit reads(root), writes(factory) {
+fn main(factory: &std::io::HandleFactory, root: &std::fs::DirectoryRead) -> result: unit reads(root), writes(factory) {
   let total = 0_u64;
   for @scan (i in 0_u64..4_u64) {
     let seen = probe(factory: factory, root: root);
@@ -2028,12 +2028,12 @@ fn main(factory: &HandleFactory, root: &DirectoryRead) -> result: unit reads(roo
 /// read_next preserves this test's single-result trigger.
 #[test]
 fn a_direct_read_state_transition_writes_enclosing_storage() {
-    let source = br#"fn main(factory: &HandleFactory, input: &InputStream, destination: &[u8]) -> result: unit writes(factory), writes(input), writes(destination) contract {
+    let source = br#"fn main(factory: &std::io::HandleFactory, input: &std::io::InputStream, destination: &[u8]) -> result: unit writes(factory), writes(input), writes(destination) contract {
   requires 1_u64 <= deref(destination).len;
 } {
   let total = 0_u64;
   for @scan (i in 0_u64..4_u64) {
-    let outcome = read_next(factory: factory, input: input, destination: destination, start: 0_u64, end: 1_u64);
+    let outcome = std::io::read_next(factory: factory, input: input, destination: destination, start: 0_u64, end: 1_u64);
     set total = total +wrap 1_u64;
   }
   return unit;
@@ -2053,7 +2053,7 @@ fn a_direct_read_state_transition_writes_enclosing_storage() {
 /// set of iterations is no longer the whole range.
 #[test]
 fn a_break_out_of_the_loop_is_denied_by_condition_four() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let total = 0_u64;
   for @sum (i in 0_u64..16_u64) {
     let stop = i == 9_u64;
@@ -2062,7 +2062,7 @@ fn a_break_out_of_the_loop_is_denied_by_condition_four() {
     }
     set total = total +wrap i;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let LoopDenial::Exit { edge } = denied(source, "main", 4) else {
@@ -2076,7 +2076,7 @@ fn a_break_out_of_the_loop_is_denied_by_condition_four() {
 /// the loop identity carries.
 #[test]
 fn a_break_to_an_enclosing_loop_is_denied_while_an_inner_break_is_not() {
-    let outward = b"fn main() -> status: ExitStatus pure {
+    let outward = b"fn main() -> status: std::process::ExitStatus pure {
   let total = 0_u64;
   loop @outer {
     for @sum (i in 0_u64..16_u64) {
@@ -2088,7 +2088,7 @@ fn a_break_to_an_enclosing_loop_is_denied_while_an_inner_break_is_not() {
     }
     break @outer;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let LoopDenial::Exit { edge } = denied(outward, "main", 4) else {
@@ -2096,7 +2096,7 @@ fn a_break_to_an_enclosing_loop_is_denied_while_an_inner_break_is_not() {
     };
     assert_eq!(edge, "a break");
 
-    let inward = b"fn main() -> status: ExitStatus pure {
+    let inward = b"fn main() -> status: std::process::ExitStatus pure {
   let total = 0_u64;
   for @sum (i in 0_u64..16_u64) {
     let seen = 0_u64;
@@ -2109,7 +2109,7 @@ fn a_break_to_an_enclosing_loop_is_denied_while_an_inner_break_is_not() {
     }
     set total = total +wrap i;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     permitted(inward, "main");
@@ -2130,9 +2130,9 @@ fn a_return_in_the_body_is_denied_by_condition_four() {
   return total;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let seen = walk(n: 9_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let LoopDenial::Exit { edge } = denied(source, "walk", 4) else {
@@ -2152,7 +2152,7 @@ fn main() -> status: ExitStatus pure {
 /// it does leave.
 #[test]
 fn a_give_delivering_inside_the_body_is_permitted() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let total = 0_u64;
   for @sum (i in 0_u64..16_u64) {
     let low = iand(i, 1_u64);
@@ -2164,7 +2164,7 @@ fn a_give_delivering_inside_the_body_is_permitted() {
     }
     set total = total +wrap weight;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     assert_eq!(permitted(source, "main").combines, vec!["+wrap"]);
@@ -2195,11 +2195,11 @@ fn a_give_in_the_body_is_denied_by_condition_four() {
   return answer +wrap acc;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let data = array_filled::<u64, 64>(value: 1_u64);
   set data[10_u64] = 7_u64;
   let t = scan_until(src: &data, needle: 7_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let LoopDenial::Exit { edge } = denied(source, "scan_until", 4) else {
@@ -2225,11 +2225,11 @@ fn main() -> status: ExitStatus pure {
   return answer +wrap acc;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let data = array_filled::<u64, 64>(value: 1_u64);
   set data[10_u64] = 7_u64;
   let t = scan_until(src: &data, needle: 7_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     assert_eq!(permitted(contained, "scan_until").combines, vec!["+wrap"]);
@@ -2252,9 +2252,9 @@ fn tally(n: u64) -> result: Result<u64, NarrowError> pure {
   return Ok<u64, NarrowError>(value: total);
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let outcome = tally(n: 8_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let LoopDenial::Exit { edge } = denied(source, "tally", 4) else {
@@ -2274,14 +2274,14 @@ fn main() -> status: ExitStatus pure {
 fn an_automatic_remainder_bound_in_the_body_preserves_reduction_permission() {
     let source = br#"const values: Array<u8, 8> =[0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8];
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let total = 0_u64;
   for @sum (i in 0_u64..16_u64) {
     let bounded = i % 8_u64;
     let picked = values[bounded];
     set total = total +wrap i;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let judged = permitted(source, "main");
@@ -2301,7 +2301,7 @@ fn main() -> status: ExitStatus pure {
 fn a_branch_proved_subscript_in_the_body_is_permitted() {
     let source = br#"const values: Array<u8, 8> =[0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8];
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let size = values.len;
   let total = 0_u64;
   for @sum (i in 0_u64..16_u64) {
@@ -2312,7 +2312,7 @@ fn main() -> status: ExitStatus pure {
     }
     set total = total +wrap i;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let table = permission_of(source);
@@ -2335,7 +2335,7 @@ fn main() -> status: ExitStatus pure {
 fn a_guard_reading_the_accumulator_is_still_a_read() {
     let source = br#"const values: Array<u8, 128> =[0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8];
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let size = values.len;
   let total = 0_u64;
   for @sum (i in 0_u64..16_u64) {
@@ -2345,7 +2345,7 @@ fn main() -> status: ExitStatus pure {
     }
     set total = total +wrap i;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let table = permission_of(source);
@@ -2378,13 +2378,13 @@ fn narrow(v: u64) -> result: u64 pure {
   return 0_u64;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let total = 0_u64;
   for @sum (i in 0_u64..16_u64) {
     let got = narrow(v: i);
     set total = total +wrap got;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let table = permission_of(source);
@@ -2422,11 +2422,11 @@ fn the_loop_verdict_is_the_same_under_every_route_to_the_same_fact() {
   return total;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u64, 64>(value: 1_u64);
   let data = slots_from_array::<u64, 64>(values: values);
   let t = tally(src: &data);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let invariant_source =
@@ -2445,11 +2445,11 @@ fn main() -> status: ExitStatus pure {
   return total;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u64, 64>(value: 1_u64);
   let data = slots_from_array::<u64, 64>(values: values);
   let t = tally(src: &data, bounded_limit: 64_u64, limit: 64_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let dominating = b"fn tally(src: &Slots<u64, 64>, limit: u64) -> result: u64 reads(src) {
@@ -2464,11 +2464,11 @@ fn main() -> status: ExitStatus pure {
   return total;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u64, 64>(value: 1_u64);
   let data = slots_from_array::<u64, 64>(values: values);
   let t = tally(src: &data, limit: 64_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let branched = b"fn tally(src: &Slots<u64, 64>, limit: u64) -> result: u64 reads(src) {
@@ -2484,11 +2484,11 @@ fn main() -> status: ExitStatus pure {
   return total;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u64, 64>(value: 1_u64);
   let data = slots_from_array::<u64, 64>(values: values);
   let t = tally(src: &data, limit: 64_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let verdicts = [
@@ -2538,14 +2538,14 @@ fn a_reference_to_outer_storage_at_a_read_row_stays_permitted() {
   return deref(cell);
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let cell = 21_u64;
   let acc = 0_u64;
   for @sum (i in 0_u64..8_u64) {
     let v = peek(cell: &cell);
     set acc = acc +wrap v;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     permitted(source, "main");
@@ -2560,7 +2560,7 @@ fn main() -> status: ExitStatus pure {
 /// only reads outer storage through it is permitted.
 #[test]
 fn a_body_statement_forming_a_reference_is_an_ordinary_member() {
-    let source = br#"fn main() -> status: ExitStatus pure {
+    let source = br#"fn main() -> status: std::process::ExitStatus pure {
   let cell = 21_u64;
   let acc = 0_u64;
   for @sum (i in 0_u64..8_u64) {
@@ -2568,7 +2568,7 @@ fn a_body_statement_forming_a_reference_is_an_ordinary_member() {
     let v = deref(g);
     set acc = acc +wrap v;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(permitted(source, "main").combines, vec!["+wrap"]);
@@ -2584,7 +2584,7 @@ fn a_body_statement_forming_a_reference_is_an_ordinary_member() {
 /// iteration names its own instance.
 #[test]
 fn a_body_reference_to_iteration_own_storage_stays_permitted() {
-    let source = br#"fn main() -> status: ExitStatus pure {
+    let source = br#"fn main() -> status: std::process::ExitStatus pure {
   let acc = 0_u64;
   for @sum (i in 0_u64..8_u64) {
     let local = array_filled::<u8, 4>(value: 7_u8);
@@ -2592,7 +2592,7 @@ fn a_body_reference_to_iteration_own_storage_stays_permitted() {
     let v = deref(h).len;
     set acc = acc +wrap v;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     permitted(source, "main");

@@ -1,17 +1,29 @@
-# Whitefoot container source
+# The Whitefoot standard library
 
-These are reusable libraries written in ordinary Whitefoot. Bundle a library
-source before its caller on the compiler command line; this directory gives
-its code no special source-language status, import behavior or native ABI.
+This directory is the standard library package the compiler carries from its
+own build [MOD-10]: its graph `modules.wfg`, one directory per module, and
+each module's `module.wfm` interface and implementation records. A program
+names a module `std::<path>`; a module program lists it in the graph row of
+each module that names it, and a source bundle may name any of them. A check
+reads a library module only when it names it. Editing these records means
+rebuilding the compiler.
 
-| Source | Operations and boundary |
+The host modules `std::io`, `std::text`, `std::fs`, `std::net` and
+`std::process` declare the host types and functions whose definitions the
+build supplies; the specification states their interface text [PRE-2]. The
+container modules below, under `std::collections`, are ordinary Whitefoot
+modules checked like any other; their interfaces are their documentation.
+
+## Collections
+
+| Module | Operations and boundary |
 | --- | --- |
-| [grow-vector.wf](grow-vector.wf) | Reserve, growing append, indexed insertion/removal, and ordered consumption over `Box<Slots<T>>`. |
-| [deque.wf](deque.wf) | Reference-taking endpoints, logical visitation and drain over `Box<Ring<T>>`; explicit consuming rebase produces a new backing. No automatic endpoint growth or zero-copy two-span interface. |
-| [slab.wf](slab.wf) | One bounded backing with lazily materialized slots, generation handles, borrowed lookup/edit, reuse, expiry, exhaustion returning the offered owner, and explicit consumption. Handles are relative to the supplied slab. |
-| [hash-map.wf](hash-map.wf) | Generic owning keys and values with supplied hash/equality, growing insertion, removal, borrowed lookup/edit, rehash, and explicit consumption. No stable bucket index or payload address. |
-| [priority-queue.wf](priority-queue.wf) | Growing boxed binary heap with supplied comparison, proved-nonempty borrowed peek and owning pop/replacement, bottom-up heapify, ordered drain, and explicit final consumption. Indexed operations additionally report resident positions and support arbitrary-position removal/replacement. |
-| [ordered-map.wf](ordered-map.wf) | Owning B-tree with supplied ordering, insertion/replacement, complete deletion and rebalancing, borrowed lookup/edit, ordered and bounded-range visitation, and explicit consumption. |
+| [`std::collections::vector`](collections/vector/module.wfm) | Reserve, growing append, indexed insertion/removal, and ordered consumption over `Box<Slots<T>>`. |
+| [`std::collections::deque`](collections/deque/module.wfm) | Reference-taking endpoints, logical visitation and drain over `Box<Ring<T>>`; explicit consuming rebase produces a new backing. No automatic endpoint growth or zero-copy two-span interface. |
+| [`std::collections::slab`](collections/slab/module.wfm) | One bounded backing with lazily materialized slots, generation handles, borrowed lookup/edit, reuse, expiry, exhaustion returning the offered owner, and explicit consumption. Handles are relative to the supplied slab. |
+| [`std::collections::hash_map`](collections/hash_map/module.wfm) | Generic owning keys and values with supplied hash/equality, growing insertion, removal, borrowed lookup/edit, rehash, and explicit consumption. No stable bucket index or payload address. |
+| [`std::collections::priority_queue`](collections/priority_queue/module.wfm) | Growing boxed binary heap with supplied comparison, proved-nonempty borrowed peek and owning pop/replacement, bottom-up heapify, ordered drain, and explicit final consumption. Indexed operations additionally report resident positions and support arbitrary-position removal/replacement. |
+| [`std::collections::ordered_map`](collections/ordered_map/module.wfm) | Owning B-tree with supplied ordering, insertion/replacement, complete deletion and rebalancing, borrowed lookup/edit, ordered and bounded-range visitation, and explicit consumption. |
 
 The caller-selected capacity ceiling bounds backing growth, or logical entries
 for the fixed-node ordered map. See [the writer pattern](../../docs/patterns.md#p2-choose-the-storage-shape-from-its-occupancy-rule)
@@ -132,10 +144,11 @@ records the source and representation choices.
 From the repository root, after building `whitefootc`:
 
 ```sh
-compiler/target/gate/whitefootc lib/containers/grow-vector.wf tests/programs/containers/grow-vector-program.wf -o /tmp/whitefoot-grow-vector
+compiler/target/gate/whitefootc tests/programs/containers/grow-vector-program.wf -o /tmp/whitefoot-grow-vector
 ```
 
-The callers and shared allocation observer stay in `tests/programs/containers/`.
+The callers and shared allocation observer stay in `tests/programs/containers/`;
+each caller names the modules it uses through an alias header.
 The Slab caller also bundles `slab-membership-program.wf`, which exercises weak
 indexes and a retained-membership protocol over one object. The separate
 `indexed-store.wf` and `indexed-membership-program.wf` bundle composes Slab,
@@ -143,7 +156,7 @@ HashMap and PriorityQueue for multiple live objects under both policies,
 including reverse-position repair, expiry/reuse and complete owning cleanup.
 Its checked handle protocol supplies neither independent retention tickets nor
 unforgeable membership or surviving references. The ordinary Rust corpus tests
-bundle these sources with their callers, execute sequential and parallel
-outputs, and check the exact release ledger. They run
+build these callers, execute sequential and parallel outputs, and check the
+exact release ledger. They run
 through canonical `make check`; there is no separate library test stage or
 Makefile. Research experiments remain explicitly invoked outside that gate.

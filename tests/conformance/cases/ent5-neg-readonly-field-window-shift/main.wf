@@ -1,5 +1,7 @@
-alias kinds = pkg::kinds;
 alias Entry = pkg::kinds::Entry;
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+alias kinds = pkg::kinds;
 
 fn main() -> status: ExitStatus pure {
   doc "ENT-5, OP-10: remove_at writes the window's filled part, which contains every element, so the bound on rows[0].width dies even though the offset is unchanged; the shifted element is the wide one and the cell read owes an unproved c < cells.len.";

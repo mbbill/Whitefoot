@@ -1,3 +1,6 @@
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
 fn top_byte(word: u64, amount: u32) -> result: u8 pure {
   if 56_u32 <= amount {
     if amount <= 64_u32 {

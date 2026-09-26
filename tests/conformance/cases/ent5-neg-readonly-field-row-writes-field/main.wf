@@ -1,5 +1,7 @@
-alias kinds = pkg::kinds;
+alias ExitStatus = std::process::ExitStatus;
 alias Node = pkg::kinds::Node;
+alias exit_status = std::process::exit_status;
+alias kinds = pkg::kinds;
 
 fn sum_after_widen(rows: &Slots<Node, 4>, kids: &[u64], i: u64) -> total: u64 reads(kids), writes(rows) contract {
   requires i < deref(rows).len;

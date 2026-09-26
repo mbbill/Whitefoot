@@ -1,4 +1,4 @@
 pkg::tools: [];
-pkg: [pkg::tools];
+pkg: [pkg::tools, std::process];
 
 entry main = pkg::main;

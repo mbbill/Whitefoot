@@ -968,7 +968,7 @@ impl CheckedNominal {
 /// owns has it and its declaration does not remove it: a struct's fields and
 /// an enum's variant payload fields are its parts, an `Array<T, N>` has the
 /// capabilities of its element, and `Slots`, `Ring`, `Box` and the host
-/// handles are declared `nocopy` or `nodrop` [PRE-1]. `parameter` answers for
+/// handles are declared `nocopy` or `nodrop` [PRE-1, PRE-2]. `parameter` answers for
 /// a type parameter standing for itself, whose capabilities are the ones its
 /// written bound grants [PROV-6]. `None` reports a nominal or element handle
 /// the tables do not hold.

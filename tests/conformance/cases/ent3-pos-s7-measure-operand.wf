@@ -1,3 +1,6 @@
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
 fn pick(source: &[u64], seed: u64) -> result: u64 reads(source) contract {
   define length = deref(source).len;
   requires length != 0_u64;

@@ -1,4 +1,6 @@
+alias ExitStatus = std::process::ExitStatus;
 alias data = pkg::data;
+alias exit_status = std::process::exit_status;
 alias report = pkg::report;
 
 fn main() -> status: ExitStatus pure {

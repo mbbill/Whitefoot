@@ -62,7 +62,7 @@ impl Drop for CacheDirectory {
 /// A three-module program: `pkg::base` publishes a function with a
 /// requirement, `pkg::user` calls it, and `pkg::tool` is independent.
 const PROGRAM_GRAPH: &[u8] =
-        b"pkg::base: [];\npkg::user: [pkg::base];\npkg::tool: [];\npkg: [pkg::base, pkg::user];\n\nentry app = pkg::main;\n";
+        b"pkg::base: [];\npkg::user: [pkg::base];\npkg::tool: [];\npkg: [pkg::base, pkg::user, std::fs, std::io, std::process, std::text];\n\nentry app = pkg::main;\n";
 const BASE_INTERFACE: &[u8] = b"public fn half(value: u8) -> result: u8 pure contract {\n  requires value > 1_u8;\n} doc \"Halves a value above one.\";\n";
 const BASE_BODY: &[u8] = b"fn half(value: u8) -> result: u8 pure contract {\n  requires value > 1_u8;\n} {\n  let result = value / 2_u8;\n  return result;\n}\n";
 const USER_INTERFACE: &[u8] = b"public fn use_half() -> result: u8 pure doc \"Halves eight.\";\n";
@@ -71,8 +71,8 @@ const TOOL_INTERFACE: &[u8] =
     b"public fn spare() -> result: u8 pure doc \"Supplies a spare value.\";\n";
 const TOOL_BODY: &[u8] = b"fn spare() -> result: u8 pure {\n  return 1_u8;\n}\n";
 const ROOT_INTERFACE: &[u8] =
-    b"public fn main() -> status: ExitStatus pure doc \"Runs the program.\";\n";
-const ROOT_BODY: &[u8] = b"fn main() -> status: ExitStatus pure {\n  let code = pkg::user::use_half();\n  return exit_status(code: code);\n}\n";
+    b"public fn main() -> status: std::process::ExitStatus pure doc \"Runs the program.\";\n";
+const ROOT_BODY: &[u8] = b"fn main() -> status: std::process::ExitStatus pure {\n  let code = pkg::user::use_half();\n  return std::process::exit_status(code: code);\n}\n";
 
 /// Every module's verdict and every entry's composition verdict, with
 /// and without the cache; the two must agree apart from reuse.
@@ -88,7 +88,12 @@ fn verdicts(
     .expect("the graph forms");
     let inputs = module_inputs(&graph, records);
     let mut verdicts = Vec::new();
-    for record in graph.modules() {
+    // [MOD-10] the program's own modules, as the command line lists them.
+    for record in graph
+        .modules()
+        .iter()
+        .filter(|record| record.package() == crate::Package::Program)
+    {
         let verdict = super::module_verdict(
             &graph,
             &inputs,
@@ -317,14 +322,14 @@ fn an_importer_reads_only_what_its_check_reached_of_an_interface() {
 /// are recomputed and accepted.
 #[test]
 fn a_callee_body_that_starts_calling_a_supplied_actual_leaves_its_caller_reused() {
-    const GRAPH: &[u8] = b"pkg::apply: [];\npkg::caller: [pkg::apply];\npkg: [pkg::caller];\n\nentry app = pkg::main;\n";
+    const GRAPH: &[u8] = b"pkg::apply: [];\npkg::caller: [pkg::apply];\npkg: [pkg::caller, std::fs, std::io, std::process, std::text];\n\nentry app = pkg::main;\n";
     const APPLY_INTERFACE: &[u8] = b"public fn run<fn step(value: u64) -> result: u64 pure>(value: u64) -> result: u64 pure doc \"Runs a value through the supplied step.\";\n";
     const RETURNS: &[u8] = b"fn run<fn step(value: u64) -> result: u64 pure>(value: u64) -> result: u64 pure {\n  return value;\n}\n";
     const CALLS: &[u8] = b"fn run<fn step(value: u64) -> result: u64 pure>(value: u64) -> result: u64 pure {\n  let stepped = step(value: value);\n  return stepped;\n}\n";
     const CALLER_INTERFACE: &[u8] =
         b"public fn go(value: u64) -> result: u64 pure doc \"Runs the caller's step.\";\n";
     const CALLER_BODY: &[u8] = b"fn twice(value: u64) -> result: u64 pure {\n  let result = value *wrap 2_u64;\n  return result;\n}\n\nfn go(value: u64) -> result: u64 pure {\n  let result = pkg::apply::run::<fn twice>(value: value);\n  return result;\n}\n";
-    const MAIN_BODY: &[u8] = b"fn main() -> status: ExitStatus pure {\n  let total = pkg::caller::go(value: 3_u64);\n  let low = iand(total, 1_u64);\n  match cvt.checked::<u64, u8>(low) {\n    Ok(value: code) => {\n      return exit_status(code: code);\n    }\n    Err(error: refused) => {\n      return exit_status(code: 255_u8);\n    }\n  }\n}\n";
+    const MAIN_BODY: &[u8] = b"fn main() -> status: std::process::ExitStatus pure {\n  let total = pkg::caller::go(value: 3_u64);\n  let low = iand(total, 1_u64);\n  match cvt.checked::<u64, u8>(low) {\n    Ok(value: code) => {\n      return std::process::exit_status(code: code);\n    }\n    Err(error: refused) => {\n      return std::process::exit_status(code: 255_u8);\n    }\n  }\n}\n";
     let directory = CacheDirectory::new("actual");
     let cache = directory.open();
     let records = |apply_body: &'static [u8]| -> Vec<(&'static str, &'static [u8])> {
@@ -362,7 +367,7 @@ fn a_callee_body_that_starts_calling_a_supplied_actual_leaves_its_caller_reused(
 /// part of that enum, keeps its verdict.
 #[test]
 fn a_declaration_reached_through_a_result_type_is_read() {
-    const GRAPH: &[u8] = b"pkg::leaf: [];\npkg::base: [pkg::leaf];\npkg::user: [pkg::base, pkg::leaf];\npkg: [pkg::user];\n\nentry app = pkg::main;\n";
+    const GRAPH: &[u8] = b"pkg::leaf: [];\npkg::base: [pkg::leaf];\npkg::user: [pkg::base, pkg::leaf];\npkg: [pkg::user, std::fs, std::io, std::process, std::text];\n\nentry app = pkg::main;\n";
     const TWO: &[u8] = b"public enum Shade {\n  Dark();\n  Light();\n}\n\npublic fn first() -> shade: Shade pure doc \"The first shade.\";\n";
     const THREE: &[u8] = b"public enum Shade {\n  Dark();\n  Light();\n  Dim();\n}\n\npublic fn first() -> shade: Shade pure doc \"The first shade.\";\n";
     const LEAF_BODY: &[u8] = b"fn first() -> shade: Shade pure {\n  return Shade::Dark();\n}\n";
@@ -373,7 +378,7 @@ fn a_declaration_reached_through_a_result_type_is_read() {
     const USER_INTERFACE: &[u8] =
         b"public fn tone() -> result: u8 pure doc \"Tells the picked shade apart.\";\n";
     const USER_BODY: &[u8] = b"fn tone() -> result: u8 pure {\n  let shade = pkg::base::pick();\n  match shade {\n    Dark() => {\n      return 1_u8;\n    }\n    Light() => {\n      return 2_u8;\n    }\n  }\n}\n";
-    const MAIN_BODY: &[u8] = b"fn main() -> status: ExitStatus pure {\n  let code = pkg::user::tone();\n  return exit_status(code: code);\n}\n";
+    const MAIN_BODY: &[u8] = b"fn main() -> status: std::process::ExitStatus pure {\n  let code = pkg::user::tone();\n  return std::process::exit_status(code: code);\n}\n";
     let directory = CacheDirectory::new("result-type");
     let cache = directory.open();
     let records = |leaf_interface: &'static [u8]| -> Vec<(&'static str, &'static [u8])> {
@@ -427,7 +432,7 @@ fn deleting_a_graph_edge_recomputes_the_modules_that_read_it() {
     ];
     let _ = recomputed(PROGRAM_GRAPH, &records, &cache);
     let without_edge: &[u8] =
-            b"pkg::base: [];\npkg::user: [];\npkg::tool: [];\npkg: [pkg::base, pkg::user];\n\nentry app = pkg::main;\n";
+            b"pkg::base: [];\npkg::user: [];\npkg::tool: [];\npkg: [pkg::base, pkg::user, std::fs, std::io, std::process, std::text];\n\nentry app = pkg::main;\n";
     assert_eq!(
         recomputed(without_edge, &records, &cache),
         ["pkg::user", "pkg", "app"].map(str::to_owned).to_vec()
@@ -443,7 +448,7 @@ fn deleting_a_graph_edge_recomputes_the_modules_that_read_it() {
     // A graph edit that changes no fact a check reads, such as the
     // entry list, recomputes no module verdict.
     let reworded: &[u8] =
-            b"pkg::base: [];\npkg::user: [pkg::base];\npkg::tool: [];\npkg: [pkg::base, pkg::user];\n\nentry app = pkg::main;\n\nentry spare = pkg::tool::spare;\n";
+            b"pkg::base: [];\npkg::user: [pkg::base];\npkg::tool: [];\npkg: [pkg::base, pkg::user, std::fs, std::io, std::process, std::text];\n\nentry app = pkg::main;\n\nentry spare = pkg::tool::spare;\n";
     assert_eq!(
         recomputed(reworded, &records, &cache),
         ["spare"].map(str::to_owned).to_vec()
@@ -470,7 +475,7 @@ fn row_and_edge_order_and_unrelated_modules_leave_verdicts_reused() {
     ];
     let _ = recomputed(PROGRAM_GRAPH, &records, &cache);
     let reordered: &[u8] =
-            b"pkg::tool: [];\npkg::base: [];\npkg::user: [pkg::base];\npkg: [pkg::user, pkg::base];\n\nentry app = pkg::main;\n";
+            b"pkg::tool: [];\npkg::base: [];\npkg::user: [pkg::base];\npkg: [pkg::user, pkg::base, std::fs, std::io, std::process, std::text];\n\nentry app = pkg::main;\n";
     assert_eq!(
         recomputed(reordered, &records, &cache),
         Vec::<String>::new()
@@ -481,7 +486,7 @@ fn row_and_edge_order_and_unrelated_modules_leave_verdicts_reused() {
     records.push(("tool/extra/module.wfm", TOOL_INTERFACE));
     records.push(("tool/extra/spare.wf", TOOL_BODY));
     let extended: &[u8] =
-            b"pkg::tool: [];\npkg::base: [];\npkg::user: [pkg::base];\npkg: [pkg::user, pkg::base];\npkg::tool::extra: [];\n\nentry app = pkg::main;\n";
+            b"pkg::tool: [];\npkg::base: [];\npkg::user: [pkg::base];\npkg: [pkg::user, pkg::base, std::fs, std::io, std::process, std::text];\npkg::tool::extra: [];\n\nentry app = pkg::main;\n";
     assert_eq!(
         recomputed(extended, &records, &cache),
         ["pkg::tool", "pkg::tool::extra"]
@@ -497,10 +502,10 @@ fn row_and_edge_order_and_unrelated_modules_leave_verdicts_reused() {
 /// composition, which reports the first rejected module's verdict.
 #[test]
 fn a_composition_reports_its_first_rejected_module_verdict() {
-    let graph: &[u8] = b"pkg::base: [];\npkg: [pkg::base];\n\nentry app = pkg::main;\n";
+    let graph: &[u8] = b"pkg::base: [];\npkg: [pkg::base, std::fs, std::io, std::process, std::text];\n\nentry app = pkg::main;\n";
     let base_interface: &[u8] = b"public struct Wrapper {\n  public value: u8;\n  secret: Hidden;\n}\n\npublic fn make() -> wrapper: Wrapper pure doc \"Makes a wrapper.\";\n";
     let base_body: &[u8] = b"struct Hidden {\n  inner: u8;\n}\n\nfn make() -> wrapper: Wrapper pure {\n  let hidden = Hidden(inner: 1_u8);\n  return Wrapper(value: 7_u8, secret: hidden);\n}\n";
-    let root_body: &[u8] = b"fn main() -> status: ExitStatus pure {\n  let wrapper = pkg::base::make();\n  return exit_status(code: wrapper.value);\n}\n";
+    let root_body: &[u8] = b"fn main() -> status: std::process::ExitStatus pure {\n  let wrapper = pkg::base::make();\n  return std::process::exit_status(code: wrapper.value);\n}\n";
     let records: Vec<(&str, &[u8])> = vec![
         ("base/module.wfm", base_interface),
         ("base/make.wf", base_body),
@@ -535,7 +540,7 @@ fn an_entry_selects_its_modules_own_function_and_is_located_when_refused() {
     let graph = crate::form_module_graph(
             SourceInput::new(
                 "modules.wfg",
-                b"pkg::a: [];\npkg: [pkg::a];\n\nentry main = pkg::main;\n\nentry hidden = pkg::a::seven;\n",
+                b"pkg::a: [std::process];\npkg: [pkg::a, std::process];\n\nentry main = pkg::main;\n\nentry hidden = pkg::a::seven;\n",
             ),
             CompilerLimits::default(),
         )
@@ -547,12 +552,12 @@ fn an_entry_selects_its_modules_own_function_and_is_located_when_refused() {
             ),
             (
                 "a/a.wf",
-                b"fn value() -> result: u8 pure {\n  return 7_u8;\n}\n\nfn seven() -> status: ExitStatus pure {\n  return exit_status(code: 7_u8);\n}\n",
+                b"fn value() -> result: u8 pure {\n  return 7_u8;\n}\n\nfn seven() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 7_u8);\n}\n",
             ),
             ("module.wfm", ROOT_INTERFACE),
             (
                 "main.wf",
-                b"fn main() -> status: ExitStatus pure {\n  let code = pkg::a::value();\n  return exit_status(code: code);\n}\n",
+                b"fn main() -> status: std::process::ExitStatus pure {\n  let code = pkg::a::value();\n  return std::process::exit_status(code: code);\n}\n",
             ),
         ];
     let inputs = module_inputs(&graph, &records);
@@ -726,7 +731,7 @@ fn receipt_program(clamp_bound: u64, kept: u64, clamp_fallback: u64) -> String {
              fn clamp(value: u64) -> result: u64 pure contract {{\n  ensures result <= {clamp_bound}_u64;\n}} {{\n  if value <= {kept}_u64 {{\n    return value;\n  }}\n  return {clamp_fallback}_u64;\n}}\n\n\
              fn relay(value: u64) -> result: u64 pure contract {{\n  ensures result <= 7_u64;\n}} {{\n  let clamped = clamp(value: value);\n  return clamped;\n}}\n\n\
              fn select(index: u64) -> result: u8 pure {{\n  let bounded = relay(value: index);\n  return lookup[bounded];\n}}\n\n\
-             fn main() -> status: ExitStatus pure {{\n  let code = select(index: 3_u64);\n  return exit_status(code: code);\n}}\n"
+             fn main() -> status: std::process::ExitStatus pure {{\n  let code = select(index: 3_u64);\n  return std::process::exit_status(code: code);\n}}\n"
     )
 }
 
@@ -839,7 +844,7 @@ fn an_instance_failure_names_the_template_and_its_requesting_call() {
     let graph = crate::form_module_graph(
         SourceInput::new(
             "modules.wfg",
-            b"pkg::lib: [];\npkg: [pkg::lib];\n\nentry app = pkg::main;\n",
+            b"pkg::lib: [];\npkg: [pkg::lib, std::fs, std::io, std::process, std::text];\n\nentry app = pkg::main;\n",
         ),
         CompilerLimits::default(),
     )
@@ -855,11 +860,11 @@ fn an_instance_failure_names_the_template_and_its_requesting_call() {
             ),
             (
                 "module.wfm",
-                b"public fn main() -> status: ExitStatus pure doc \"Requests one overflowing instance.\";\n",
+                b"public fn main() -> status: std::process::ExitStatus pure doc \"Requests one overflowing instance.\";\n",
             ),
             (
                 "main.wf",
-                b"fn main() -> status: ExitStatus pure {\n  let cells = pkg::lib::doubled::<9223372036854775808>(count: 7_u64);\n  return exit_status(code: 0_u8);\n}\n",
+                b"fn main() -> status: std::process::ExitStatus pure {\n  let cells = pkg::lib::doubled::<9223372036854775808>(count: 7_u64);\n  return std::process::exit_status(code: 0_u8);\n}\n",
             ),
         ];
     let inputs = module_inputs(&graph, &records);
@@ -886,7 +891,7 @@ fn a_no_heap_entry_build_names_no_allocator_that_its_sibling_entry_uses() {
     let graph = crate::form_module_graph(
             SourceInput::new(
                 "modules.wfg",
-                b"pkg: [];\npkg::tools: [];\n\nentry kernel = pkg::start {\n  no_heap;\n}\n\nentry tool = pkg::tools::run;\n",
+                b"pkg: [std::process];\npkg::tools: [std::process];\n\nentry kernel = pkg::start {\n  no_heap;\n}\n\nentry tool = pkg::tools::run;\n",
             ),
             CompilerLimits::default(),
         )
@@ -894,19 +899,19 @@ fn a_no_heap_entry_build_names_no_allocator_that_its_sibling_entry_uses() {
     let records: [(&str, &[u8]); 4] = [
             (
                 "module.wfm",
-                b"public fn start() -> status: ExitStatus pure doc \"Starts the kernel.\";\n",
+                b"public fn start() -> status: std::process::ExitStatus pure doc \"Starts the kernel.\";\n",
             ),
             (
                 "start.wf",
-                b"fn spare() -> result: u8 pure {\n  let cell = box_new::<u8>(value: 1_u8);\n  return 0_u8;\n}\n\nfn start() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+                b"fn spare() -> result: u8 pure {\n  let cell = box_new::<u8>(value: 1_u8);\n  return 0_u8;\n}\n\nfn start() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n",
             ),
             (
                 "tools/module.wfm",
-                b"public fn run() -> status: ExitStatus pure doc \"Runs the tool.\";\n",
+                b"public fn run() -> status: std::process::ExitStatus pure doc \"Runs the tool.\";\n",
             ),
             (
                 "tools/run.wf",
-                b"fn run() -> status: ExitStatus pure {\n  let cell = box_new::<u8>(value: 7_u8);\n  return exit_status(code: 0_u8);\n}\n",
+                b"fn run() -> status: std::process::ExitStatus pure {\n  let cell = box_new::<u8>(value: 7_u8);\n  return std::process::exit_status(code: 0_u8);\n}\n",
             ),
         ];
     let inputs = module_inputs(&graph, &records);
@@ -1101,12 +1106,12 @@ fn ledger_of(name: &str, source: &[u8]) -> Vec<String> {
 /// are printed here.
 #[test]
 fn a_syntax_rejection_prints_the_expected_spellings_and_the_offending_line() {
-    let source = br#"fn main() -> status: ExitStatus pure {
+    let source = br#"fn main() -> status: std::process::ExitStatus pure {
   doc "Writes a nested call where the grammar admits an atom.";
   let dotted = 1_u8;
   let addressable = 2_u8;
   let skip = bor(dotted, bnot(addressable));
-  return exit_status(code: skip);
+  return std::process::exit_status(code: skip);
 }
 "#;
     let failure = compile(
@@ -1150,32 +1155,32 @@ fn invariant_targets_and_certificate_steps_keep_distinct_rule_owners() {
                 // v0.60's [INV-1] admits `==` in an invariant target and
                 // refuses `!=` in either position, which is the reverse of
                 // the v0.59 row this fixture carried.
-                b"fn main() -> status: ExitStatus pure {\n  invariant bad: 0_u64 != 0_u64;\n  return exit_status(code: 0_u8);\n}\n"
+                b"fn main() -> status: std::process::ExitStatus pure {\n  invariant bad: 0_u64 != 0_u64;\n  return std::process::exit_status(code: 0_u8);\n}\n"
                     .as_slice(),
                 CompilationStage::Semantics,
                 "INV-1",
             ),
             (
                 "local-target-unproved.wf",
-                b"fn main() -> status: ExitStatus pure {\n  invariant bad: 1_u64 <= 0_u64;\n  return exit_status(code: 0_u8);\n}\n",
+                b"fn main() -> status: std::process::ExitStatus pure {\n  invariant bad: 1_u64 <= 0_u64;\n  return std::process::exit_status(code: 0_u8);\n}\n",
                 CompilationStage::Semantics,
                 "INV-1",
             ),
             (
                 "use-relation-formation.wf",
-                b"fn check(value: u64, limit: u64) -> result: unit pure {\n  invariant scaled: 2_u64 * value <= 2_u64 * limit {\n    use (value == limit);\n  }\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+                b"fn check(value: u64, limit: u64) -> result: unit pure {\n  invariant scaled: 2_u64 * value <= 2_u64 * limit {\n    use (value == limit);\n  }\n  return unit;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n",
                 CompilationStage::Semantics,
                 "PRF-1",
             ),
             (
                 "use-relation-name.wf",
-                b"fn check(value: u64, limit: u64) -> result: unit pure {\n  invariant scaled: 2_u64 * value <= 2_u64 * limit {\n    use (value <= missing);\n  }\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+                b"fn check(value: u64, limit: u64) -> result: unit pure {\n  invariant scaled: 2_u64 * value <= 2_u64 * limit {\n    use (value <= missing);\n  }\n  return unit;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n",
                 CompilationStage::Resolution,
                 "PRF-1",
             ),
             (
                 "named-use-scope.wf",
-                b"fn check(value: u64, limit: u64) -> result: unit pure {\n  invariant scaled: 2_u64 * value <= 2_u64 * limit {\n    use missing;\n  }\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+                b"fn check(value: u64, limit: u64) -> result: unit pure {\n  invariant scaled: 2_u64 * value <= 2_u64 * limit {\n    use missing;\n  }\n  return unit;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n",
                 CompilationStage::Resolution,
                 "INV-1",
             ),
@@ -1199,7 +1204,7 @@ fn invariant_targets_and_certificate_steps_keep_distinct_rule_owners() {
 /// cost a writer a compile round spent bisecting a byte offset.
 #[test]
 fn a_canonical_rejection_prints_the_expected_bytes_beside_the_found_bytes() {
-    let source = b"fn main() -> status: ExitStatus pure {\n  doc \"One double space where canonical form admits one space.\";\n  return exit_status(code:  0_u8);\n}\n";
+    let source = b"fn main() -> status: std::process::ExitStatus pure {\n  doc \"One double space where canonical form admits one space.\";\n  return std::process::exit_status(code:  0_u8);\n}\n";
     let failure = compile(
         &[SourceInput::from_host_path(
             "input0.wf",
@@ -1228,10 +1233,10 @@ fn a_canonical_rejection_prints_the_expected_bytes_beside_the_found_bytes() {
 /// the requirement, not by adding a scope.
 #[test]
 fn a_reference_parameter_keeps_its_later_call_requirement() {
-    let source = br#"fn walk(factory: &HandleFactory, root: &DirectoryRead, name: &[u8]) -> result: u8 reads(root), reads(name), writes(factory) {
-  match open_file(factory: factory, root: root, name: name, start: 0_u64, end: 1_u64) {
+    let source = br#"fn walk(factory: &std::io::HandleFactory, root: &std::fs::DirectoryRead, name: &[u8]) -> result: u8 reads(root), reads(name), writes(factory) {
+  match std::fs::open_file(factory: factory, root: root, name: name, start: 0_u64, end: 1_u64) {
     Ok(value: handle) => {
-      close_read(factory: factory, file: move handle);
+      std::fs::close_read(factory: factory, file: move handle);
     }
     Err(error: problem) => {
     }
@@ -1278,10 +1283,10 @@ fn a_post_syntax_rejection_names_its_file_and_quotes_its_line() {
   lines: u64;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let running = Counts(lines: 0_u64);
   let totals = running;
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let failure = compile(
@@ -1302,12 +1307,12 @@ fn main() -> status: ExitStatus pure {
     assert!(!rendered.contains("input0.wf"), "{rendered}");
 
     // [TYPE-6], reached in the resolver.
-    let collision = br#"fn main() -> status: ExitStatus pure {
+    let collision = br#"fn main() -> status: std::process::ExitStatus pure {
   let permit = 1_u64;
   if permit == 1_u64 {
     let permit = 2_u64;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let failure = compile(
@@ -1347,7 +1352,7 @@ fn main() -> status: ExitStatus pure {
 #[test]
 fn a_lexical_rejection_names_the_host_path() {
     let host = "/absolute/path/pound.wf";
-    let source = "fn main() -> status: ExitStatus pure {\n  let x = \u{a3};\n  return exit_status(code: 0_u8);\n}\n";
+    let source = "fn main() -> status: std::process::ExitStatus pure {\n  let x = \u{a3};\n  return std::process::exit_status(code: 0_u8);\n}\n";
     let failure = compile(
         &[SourceInput::from_host_path(
             "input0.wf",
@@ -1377,12 +1382,12 @@ fn a_lexical_rejection_names_the_host_path() {
 /// on disk, so the output was not usable as emitted.
 #[test]
 fn a_ledger_names_the_host_path_the_source_was_read_from() {
-    let source = br#"fn main() -> status: ExitStatus pure {
+    let source = br#"fn main() -> status: std::process::ExitStatus pure {
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     set total = total +wrap index;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let host = "/absolute/path/counted.wf";
@@ -1441,12 +1446,12 @@ fn the_permission_ledger_reports_eligible_pairs_and_their_chains() {
   }}
 }}
 
-fn main() -> status: ExitStatus pure {{
+fn main() -> status: std::process::ExitStatus pure {{
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
   let total = fold(node: &branch0);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }}
 "
     );
@@ -1493,16 +1498,16 @@ fn bubble(node: &Box<BoxNode>) -> result: u64 writes(node) {{
   }}
 }}
 
-fn main() -> status: ExitStatus pure {{
+fn main() -> status: std::process::ExitStatus pure {{
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
   let total = bubble(node: &branch0);
   if total == 7_u64 {{
   }} else {{
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }}
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }}
 "
     );
@@ -1599,12 +1604,12 @@ fn the_permission_ledger_names_the_condition_that_refused_each_pair() {
   return seen;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let cell = 1_u64;
   let lo = bump(slot: &cell);
   let hi = bump(slot: &cell);
   let total = imax(lo, hi);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     assert_eq!(
@@ -1624,18 +1629,19 @@ fn main() -> status: ExitStatus pure {
     );
 
     // Affine opaque values have empty release under PRE-1 and STOR-3.
-    let capability_releases = b"fn release_read_file(file: OutputStream) -> result: unit pure {
+    let capability_releases =
+        b"fn release_read_file(file: std::io::OutputStream) -> result: unit pure {
   return unit;
 }
 
-fn release_pair(first: OutputStream, second: OutputStream) -> result: unit pure {
+fn release_pair(first: std::io::OutputStream, second: std::io::OutputStream) -> result: unit pure {
   let done_first = release_read_file(file: move first);
   let done_second = release_read_file(file: move second);
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     assert_eq!(
@@ -1669,8 +1675,8 @@ fn probe(outcome: Result<u8, NarrowError>, a: &u8, b: &u8) -> result: Result<uni
   return Ok<unit, NarrowError>(value: unit);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     assert_eq!(
@@ -1714,7 +1720,7 @@ fn a_counted_loop_reducing_under_an_associative_operation_is_permitted() {
   return low == 3_u64;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let hits = 0_u64;
   for @scan (i in 0_u64..4096_u64) {
     let escaped = interesting(index: i);
@@ -1722,7 +1728,7 @@ fn main() -> status: ExitStatus pure {
       set hits = hits +wrap 1_u64;
     }
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     assert_eq!(
@@ -1749,13 +1755,13 @@ fn main() -> status: ExitStatus pure {
 /// wrote.
 #[test]
 fn a_counted_loop_reducing_under_a_float_operation_is_denied_by_condition_one() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let total = 0.0_f64;
   let step = 0.5_f64;
   for @sum (i in 0_u64..1024_u64) {
     set total = fadd.strict(total, step);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     assert_eq!(
@@ -1773,13 +1779,13 @@ fn a_counted_loop_reducing_under_a_float_operation_is_denied_by_condition_one() 
 
     // The identical loop over an integer accumulator is permitted, so the
     // refusal above is about the operation and not about the loop.
-    let integral = b"fn main() -> status: ExitStatus pure {
+    let integral = b"fn main() -> status: std::process::ExitStatus pure {
   let total = 0_u64;
   let step = 5_u64;
   for @sum (i in 0_u64..1024_u64) {
     set total = total +wrap step;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     assert_eq!(
@@ -1799,13 +1805,13 @@ fn a_counted_loop_reducing_under_a_float_operation_is_denied_by_condition_one() 
 /// an eligible map with no accumulator.
 #[test]
 fn a_proven_counted_binder_buffer_map_is_permitted() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u64, 64>(value: 0_u64);
   let out = slots_from_array::<u64, 64>(values: values);
   for @fill (i in 0_u64..64_u64) {
     set out[i] = i *wrap i;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     assert_eq!(
@@ -1841,14 +1847,14 @@ fn a_counted_loop_whose_callee_writes_carried_state_is_denied_by_condition_two()
   return iand(bits, 1_u64);
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let total = 0.0_f64;
   let count = 0_u64;
   for @sum (i in 0_u64..8_u64) {
     let one = accum(slot: &total, x: 0.5_f64);
     set count = count +wrap one;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     assert_eq!(
@@ -1875,14 +1881,14 @@ fn main() -> status: ExitStatus pure {
   return iand(bits, 1_u64);
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let total = 0.0_f64;
   let count = 0_u64;
   for @sum (i in 0_u64..8_u64) {
     let one = weigh(x: total);
     set count = count +wrap one;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     assert_eq!(
@@ -1933,12 +1939,12 @@ fn a_counted_loop_a_give_can_leave_is_denied_by_condition_four() {
   return answer +wrap acc;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u64, 64>(value: 1_u64);
   let data = slots_from_array::<u64, 64>(values: values);
   set data[10_u64] = 7_u64;
   let t = scan_until(src: &data, needle: 7_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     assert_eq!(
@@ -1989,12 +1995,12 @@ fn main() -> status: ExitStatus pure {
   return answer +wrap acc;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u64, 64>(value: 1_u64);
   let data = slots_from_array::<u64, 64>(values: values);
   set data[10_u64] = 7_u64;
   let t = scan_until(src: &data, needle: 7_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     assert_eq!(
@@ -2037,7 +2043,7 @@ fn main() -> status: ExitStatus pure {
 /// row is `band`, `bor`, `bxor` [OP-1].
 #[test]
 fn a_refused_multi_accumulator_loop_keeps_advice_naming_the_boolean_combines() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let every = True();
   let any = False();
   let parity = False();
@@ -2048,7 +2054,7 @@ fn a_refused_multi_accumulator_loop_keeps_advice_naming_the_boolean_combines() {
     set any = bor(any, bit);
     set parity = bxor(parity, bit);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     assert_eq!(
@@ -2073,12 +2079,12 @@ fn a_refused_multi_accumulator_loop_keeps_advice_naming_the_boolean_combines() {
 /// Only ordinary counted-loop permission remains after C2 deletes PAR-3.
 #[test]
 fn a_counted_loop_reports_only_its_ordinary_permission() {
-    let source = b"fn main() -> status: ExitStatus pure {
+    let source = b"fn main() -> status: std::process::ExitStatus pure {
   let total = 0_u64;
   for @sum (i in 0_u64..8_u64) {
     set total = total +wrap i;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     assert_eq!(
@@ -2096,7 +2102,7 @@ fn a_counted_loop_reports_only_its_ordinary_permission() {
 /// same bytes.
 #[test]
 fn the_permission_ledger_is_output_beside_an_unchanged_module() {
-    let source = b"fn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    let source = b"fn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n";
     let (module, ledger) = compile_with_permission_ledger(
         &[SourceInput::new("quiet.wf", source)],
         CompilerLimits::default(),
@@ -2157,12 +2163,12 @@ fn the_ledger_names_every_cyclic_component_and_what_the_budget_did_with_it() {
   }}
 }}
 
-fn main() -> status: ExitStatus pure {{
+fn main() -> status: std::process::ExitStatus pure {{
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
   let total = fold(node: &branch0);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }}
 "
     );
@@ -2234,7 +2240,7 @@ fn main() -> status: ExitStatus pure {{
   return low == 3_u64;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let hits = 0_u64;
   for @scan (i in 0_u64..4096_u64) {
     let escaped = interesting(index: i);
@@ -2242,7 +2248,7 @@ fn main() -> status: ExitStatus pure {
       set hits = hits +wrap 1_u64;
     }
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 ";
     let split = lines(
@@ -2283,12 +2289,12 @@ fn the_permission_ledger_does_not_depend_on_whether_the_lowering_is_taken() {
   }}
 }}
 
-fn main() -> status: ExitStatus pure {{
+fn main() -> status: std::process::ExitStatus pure {{
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
   let total = fold(node: &branch0);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }}
 "
     );
@@ -2330,7 +2336,7 @@ fn main() -> status: ExitStatus pure {{
 
 #[test]
 fn driver_erases_empty_formal_and_actual_groups_before_lowering() {
-    let source = b"interface Empty {\n}\n\nbinding Selected : Empty {\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    let source = b"interface Empty {\n}\n\nbinding Selected : Empty {\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n";
     let llvm = compile(
         &[SourceInput::new("value.wf", source)],
         CompilerLimits::default(),
@@ -2430,7 +2436,7 @@ fn every_pre_semantic_rejection_publishes_the_rule_its_stage_attributed() {
 
 #[test]
 fn unrepresentable_array_is_a_target_failure_without_a_source_rule() {
-    let source = b"fn main() -> status: ExitStatus pure {\n  let values = array_filled::<u8, 18446744073709551615>(value: 0_u8);\n  return exit_status(code: 0_u8);\n}\n";
+    let source = b"fn main() -> status: std::process::ExitStatus pure {\n  let values = array_filled::<u8, 18446744073709551615>(value: 0_u8);\n  return std::process::exit_status(code: 0_u8);\n}\n";
     check(
         &[SourceInput::new("value.wf", source)],
         CompilerLimits::default(),
@@ -2462,10 +2468,10 @@ fn a_loop_frame_outside_the_selected_address_domain_stays_a_target_failure() {
   return total;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u8, 216>(value: 17_u8);
   let total = folded(values: values);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let target = TargetLayout::host()
@@ -2518,9 +2524,9 @@ fn make(n: u64) -> result: Box<Array<u16>> pure {
   return box_array_filled::<u16>(count: bounded, value: 0_u16);
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = make(n: 4_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     check(
@@ -2541,7 +2547,7 @@ fn main() -> status: ExitStatus pure {
 
 #[test]
 fn complete_frame_is_checked_after_each_slot_layout_succeeds() {
-    let source = b"fn main() -> status: ExitStatus pure {\n  let left = array_filled::<u8, 4611686018427387904>(value: 0_u8);\n  let right = array_filled::<u8, 4611686018427387904>(value: 0_u8);\n  return exit_status(code: 0_u8);\n}\n";
+    let source = b"fn main() -> status: std::process::ExitStatus pure {\n  let left = array_filled::<u8, 4611686018427387904>(value: 0_u8);\n  let right = array_filled::<u8, 4611686018427387904>(value: 0_u8);\n  return std::process::exit_status(code: 0_u8);\n}\n";
     let failure = compile(
         &[SourceInput::new("value.wf", source)],
         CompilerLimits::default(),
@@ -2558,7 +2564,7 @@ fn complete_frame_is_checked_after_each_slot_layout_succeeds() {
 #[test]
 fn prelude_functions_and_unit_results_use_the_normal_call_path() {
     for source in [
-        b"fn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n"
+        b"fn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n"
             .as_slice(),
         b"fn main() -> result: unit pure {\n  return unit;\n}\n",
     ] {
@@ -2576,11 +2582,11 @@ fn prelude_functions_and_unit_results_use_the_normal_call_path() {
     // exactness. Both are still rejections of the same two sources.
     for (source, rule) in [
         (
-            b"fn probe(args: Args) -> result: unit reads(args) {\n  return unit;\n}\n".as_slice(),
+            b"fn probe(args: std::text::Args) -> result: unit reads(args) {\n  return unit;\n}\n".as_slice(),
             "EFF-1",
         ),
         (
-            b"fn probe(file: &ReadFile) -> result: unit writes(file) {\n  return unit;\n}\n",
+            b"fn probe(file: &std::fs::ReadFile) -> result: unit writes(file) {\n  return unit;\n}\n",
             "EFF-2",
         ),
     ] {
@@ -2800,8 +2806,8 @@ fn helper(value: u64) -> out: u64 pure {
   return a;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
     );
@@ -2821,8 +2827,8 @@ fn main() -> status: ExitStatus pure {
   return 0_u64;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
     );
@@ -2852,8 +2858,8 @@ fn the_contract_block_repair_gram9_names_is_accepted() {
   return 0_u64;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         )],
@@ -2874,10 +2880,10 @@ fn main() -> status: ExitStatus pure {
 fn an_effect_row_defect_names_its_condition_and_the_row_that_repairs_it() {
     let detail = rejection(
             "row.wf",
-            br#"fn probe(cwd: &u64, out: &u64) -> status: ExitStatus writes(cwd), writes(cwd), writes(out) {
+            br#"fn probe(cwd: &u64, out: &u64) -> status: std::process::ExitStatus writes(cwd), writes(cwd), writes(out) {
   set deref(cwd) = 1_u64;
   set deref(out) = 2_u64;
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         );
@@ -2906,8 +2912,8 @@ fn an_effect_mismatch_publishes_both_rows_and_the_exact_difference() {
   return 0_u64;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
     );
@@ -2931,11 +2937,11 @@ fn main() -> status: ExitStatus pure {
 fn a_type_mismatch_publishes_the_type_required_and_the_type_written() {
     let detail = rejection(
         "types.wf",
-        br#"fn main() -> status: ExitStatus pure {
+        br#"fn main() -> status: std::process::ExitStatus pure {
   let a = 1_u64;
   let b = 2_u32;
   let c = a <= b;
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
     );
@@ -2964,8 +2970,8 @@ fn a_generic_form_without_type_arguments_names_both_spellings() {
   return Ok(value: value);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
     );
@@ -2984,8 +2990,8 @@ fn main() -> status: ExitStatus pure {
   return Ok<u8, unit>(value: value);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         )],
@@ -3014,15 +3020,15 @@ fn a_reference_result_is_refused_at_the_result_type() {
   return anchor;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
     );
     assert!(detail.contains("[GRAM-3]"), "{detail}");
     assert!(
             detail.contains(
-                r#"expected: [IDENT, TYPEID, "pkg", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "unit"]"#
+                r#"expected: [IDENT, TYPEID, "pkg", "std", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "unit"]"#
             ),
             "{detail}"
         );
@@ -3044,7 +3050,7 @@ fn main() -> status: ExitStatus pure {
 fn a_canonical_gap_quotes_the_line_its_offending_bytes_are_in() {
     let detail = rejection(
             "indent.wf",
-            b"fn helper(value: u64) -> out: u64 pure {\n  let a = value +wrap 1_u64;\n    let b = a +wrap 2_u64;\n  return b;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+            b"fn helper(value: u64) -> out: u64 pure {\n  let a = value +wrap 1_u64;\n    let b = a +wrap 2_u64;\n  return b;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n",
         );
     assert!(detail.contains("[FORM-2]"), "{detail}");
     assert!(
@@ -3056,7 +3062,7 @@ fn a_canonical_gap_quotes_the_line_its_offending_bytes_are_in() {
     // the first byte of the gap, which is where the wrong bytes begin.
     let inline = rejection(
             "spacing.wf",
-            b"fn helper(value: u64) -> out: u64 pure {\n  let a = value +wrap 1_u64;\n  let b = a  +wrap 2_u64;\n  return b;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+            b"fn helper(value: u64) -> out: u64 pure {\n  let a = value +wrap 1_u64;\n  let b = a  +wrap 2_u64;\n  return b;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n",
         );
     assert!(
             inline.starts_with(&format!(
@@ -3065,4 +3071,78 @@ fn a_canonical_gap_quotes_the_line_its_offending_bytes_are_in() {
             )),
             "{inline}"
         );
+}
+
+/// [MOD-10] the standard library's module table the compiler carries is
+/// exactly what forming the library's own graph record gives, row for row
+/// and edge for edge, through the stages every graph record passes.
+#[test]
+fn the_carried_library_table_is_the_library_graph() {
+    let formed = super::form_graph_record(
+        SourceInput::new(crate::library::GRAPH_PATH, crate::library::GRAPH.as_bytes()),
+        crate::CompilerLimits::default(),
+        crate::Package::Standard,
+        None,
+    )
+    .expect("the standard library's graph record forms");
+    assert_eq!(formed.modules(), crate::library::modules(0).as_slice());
+    assert!(formed.entries().is_empty());
+}
+
+/// [MOD-10] inside the standard library `pkg` names the library itself, so
+/// a library graph writing `std` is refused, and so is a program graph
+/// writing a `std` path that names no library module.
+#[test]
+fn the_library_graph_writes_pkg_and_a_program_names_only_library_modules() {
+    let refused = super::form_graph_record(
+        SourceInput::new("std/modules.wfg", b"pkg::io: [];\npkg::fs: [std::io];\n"),
+        crate::CompilerLimits::default(),
+        crate::Package::Standard,
+        None,
+    )
+    .expect_err("a library graph writing std is refused");
+    assert_eq!(refused.rule_id(), Some("MOD-10"));
+    let unknown = crate::form_module_graph(
+        SourceInput::new("modules.wfg", b"pkg: [std::nothing];\n"),
+        crate::CompilerLimits::default(),
+    )
+    .expect_err("a std dependency naming no library module is refused");
+    assert_eq!(unknown.rule_id(), Some("MOD-10"));
+    let graph = crate::form_module_graph(
+        SourceInput::new("modules.wfg", b"pkg::a: [std::io];\npkg: [pkg::a];\n"),
+        crate::CompilerLimits::default(),
+    )
+    .expect("a row may list a library module");
+    let a = graph.module_named("pkg::a").expect("pkg::a is registered");
+    let io = graph
+        .module_named("std::io")
+        .expect("the library's modules follow");
+    assert!(graph.modules()[a.index()].depends_on(io));
+    assert_eq!(graph.program_modules().count(), 2);
+}
+
+/// [MOD-8, MOD-10] a standard library module's verdict key is the same in
+/// every program that selects it: a program module registered below a path
+/// the library also uses is no child of the library module, so it enters
+/// neither the library module's graph facts nor its key.
+#[test]
+fn a_library_module_verdict_key_ignores_the_programs_modules() {
+    let material = |graph_text: &[u8]| {
+        let graph = crate::form_module_graph(
+            SourceInput::new("modules.wfg", graph_text),
+            crate::CompilerLimits::default(),
+        )
+        .expect("the graph forms");
+        let inputs = super::with_library_records(&graph, &[]);
+        let io = graph
+            .module_named("std::io")
+            .expect("std::io is selectable");
+        super::ModuleCheck::new(&graph, &inputs, io, false).material
+    };
+    let alone = material(b"pkg: [std::io];\n");
+    let beside = material(b"pkg::io: [];\npkg::io::x: [];\npkg: [pkg::io, pkg::io::x, std::io];\n");
+    assert_eq!(
+        String::from_utf8_lossy(&alone),
+        String::from_utf8_lossy(&beside)
+    );
 }

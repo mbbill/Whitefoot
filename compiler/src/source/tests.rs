@@ -290,7 +290,7 @@ fn prelude_injection_keeps_the_complete_bundle_source_ceiling() {
 
 #[test]
 fn supplied_prelude_paths_do_not_reserve_writer_logical_paths() {
-    let inputs = [input("prelude/HostString.wf", b"writer bytes")];
+    let inputs = [input("prelude/Array.wf", b"writer bytes")];
     let bundle = SourceBundle::with_prelude(&inputs, SourceLimits::REPRESENTABLE).unwrap();
     assert_eq!(
         bundle.file(SourceId::from_ordinal(0)).unwrap().bytes(),
@@ -300,7 +300,7 @@ fn supplied_prelude_paths_do_not_reserve_writer_logical_paths() {
         bundle
             .files()
             .iter()
-            .filter(|file| file.logical_path().as_str() == "prelude/HostString.wf")
+            .filter(|file| file.logical_path().as_str() == "prelude/Array.wf")
             .count(),
         2
     );

@@ -46,14 +46,6 @@
 //!   sentence, retires with the same former for the same reason: a measure
 //!   member read on an unmeasured place is [MSR-1]'s own [TYPE-5] rejection
 //!   carrying the measured types, not this one.
-//! - The two-argument call-separation repair for an index beside a window's
-//!   `next` or `free` in `check.rs`, "when the index can be below the
-//!   window's length here, prove that before this call; otherwise pass an
-//!   index this call proves below it". A callee reads `x[i]` only under a
-//!   proof of `i < x.len`: a requirement, whose [FN-8] rejection at the call
-//!   comes first, or a read of `x.len`, which overlaps the other argument's
-//!   write of that length, declared by every prelude row that writes `next`
-//!   or `free`, so the checker refuses the call under [EFF-5] first.
 //!
 //! Two bullets this list used to carry are gone with their sentences rather
 //! than with their reachability: `check::expressions::region_spelling` and
@@ -89,8 +81,8 @@ const PROBES: &[Probe] = &[
         name: "const-name-is-not-an-ident.wf",
         source: br#"const Limit: u64 = 8_u64;
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "FORM-3",
@@ -106,8 +98,8 @@ fn main() -> status: ExitStatus pure {
   seq: u64;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "FORM-3",
@@ -123,11 +115,11 @@ fn main() -> status: ExitStatus pure {
     // LABEL — whose own sentences no longer list REGIONID either.
     Probe {
         name: "break-target-is-not-a-label.wf",
-        source: br#"fn main() -> status: ExitStatus pure {
+        source: br#"fn main() -> status: std::process::ExitStatus pure {
   loop @spin {
     break spin;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "FORM-3",
@@ -155,8 +147,8 @@ fn main() -> status: ExitStatus pure {
   return 0_u64;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "GRAM-2",
@@ -175,8 +167,8 @@ fn helper(value: u64) -> out: u64 pure {
   return a;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "GRAM-9",
@@ -192,8 +184,8 @@ fn main() -> status: ExitStatus pure {
   return 0_u64;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "GRAM-9",
@@ -212,8 +204,8 @@ fn main() -> status: ExitStatus pure {
   return deref(destination).len;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "MSR-3",
@@ -231,8 +223,8 @@ fn main() -> status: ExitStatus pure {
   return 0_u64;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "CALL-6",
@@ -250,8 +242,8 @@ fn main() -> status: ExitStatus pure {
   seq: u64;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-6",
@@ -261,12 +253,12 @@ fn main() -> status: ExitStatus pure {
     },
     Probe {
         name: "collides-with-a-prelude-opaque-declaration.wf",
-        source: br#"struct DirectoryRead {
+        source: br#"struct Slots {
   seq: u64;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-6",
@@ -276,10 +268,10 @@ fn main() -> status: ExitStatus pure {
     },
     Probe {
         name: "redeclared-in-one-scope.wf",
-        source: br#"fn main() -> status: ExitStatus pure {
+        source: br#"fn main() -> status: std::process::ExitStatus pure {
   let count = 1_u64;
   let count = 2_u64;
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-6",
@@ -297,14 +289,14 @@ fn consume(ticket: Ticket) -> seq: u64 pure {
   return ticket.seq;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let permit = Ticket(seq: 1_u64);
   let used = consume(ticket: move permit);
   if used == 1_u64 {
     let permit = Ticket(seq: 2_u64);
     let again = consume(ticket: move permit);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-6",
@@ -319,13 +311,13 @@ fn main() -> status: ExitStatus pure {
     // -------------------------------------------------------------------
     Probe {
         name: "prelude-range-residual.wf",
-        source: br#"fn main(out: OutputStream, factory: HandleFactory) -> status: ExitStatus pure {
+        source: br#"fn main(out: std::io::OutputStream, factory: std::io::HandleFactory) -> status: std::process::ExitStatus pure {
   let header = array_filled::<u8, 4>(value: 65_u8);
   let payload = array_filled::<u8, 9>(value: 66_u8);
   let wide = payload.len;
   let view = &header[0_u64..4_u64];
-  let sent = write_once(factory: &factory, output: &out, source: view, start: 0_u64, end: wide);
-  return exit_status(code: 0_u8);
+  let sent = std::io::write_once(factory: &factory, output: &out, source: view, start: 0_u64, end: wide);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "FN-8",
@@ -336,12 +328,12 @@ fn main() -> status: ExitStatus pure {
     },
     Probe {
         name: "bounds-residual.wf",
-        source: br#"fn main() -> status: ExitStatus pure {
+        source: br#"fn main() -> status: std::process::ExitStatus pure {
   let table = array_filled::<u8, 4>(value: 0_u8);
   let other = array_filled::<u8, 9>(value: 0_u8);
   let pick = other.len;
   let one = table[pick];
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "OP-4",
@@ -364,9 +356,9 @@ fn main() -> status: ExitStatus pure {
   return value;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let doubled = identity(value: 1_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "FN-2",
@@ -385,9 +377,9 @@ fn main() -> status: ExitStatus pure {
   right: T;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let p = Pair(left: 1_u64, right: 2_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-5",
@@ -403,9 +395,9 @@ fn main() -> status: ExitStatus pure {
   right: T;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let p = Pair<u64, u64>(left: 1_u64, right: 2_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-5",
@@ -421,9 +413,9 @@ fn main() -> status: ExitStatus pure {
   right: T;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let p = Pair<4>(left: 1_u64, right: 2_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-5",
@@ -438,9 +430,9 @@ fn main() -> status: ExitStatus pure {
   count: u64;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = Row<u64>(count: 1_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-5",
@@ -455,9 +447,9 @@ fn main() -> status: ExitStatus pure {
   value: u64;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let p = Plain<u64>(value: 1_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-5",
@@ -472,8 +464,8 @@ fn main() -> status: ExitStatus pure {
   return 0_u64;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-5",
@@ -488,9 +480,9 @@ fn main() -> status: ExitStatus pure {
   return value;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let a = widen::<f64>(value: 1.0_f64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "FN-3",
@@ -505,9 +497,9 @@ fn main() -> status: ExitStatus pure {
   return value;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let a = scale::<u64>(value: 1_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "FN-3",
@@ -525,8 +517,8 @@ fn main() -> status: ExitStatus pure {
   return Ok(value: value);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-5",
@@ -541,8 +533,8 @@ fn main() -> status: ExitStatus pure {
   return Ok<u64>(value: value);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-5",
@@ -553,12 +545,12 @@ fn main() -> status: ExitStatus pure {
     },
     Probe {
         name: "result-with-a-const-type-argument.wf",
-        source: br#"fn pick(value: u64) -> out: Result<4, IoError> pure {
-  return Ok<4, IoError>(value: value);
+        source: br#"fn pick(value: u64) -> out: Result<4, std::io::IoError> pure {
+  return Ok<4, std::io::IoError>(value: value);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-5",
@@ -573,8 +565,8 @@ fn main() -> status: ExitStatus pure {
   return Some(value: value);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-5",
@@ -589,8 +581,8 @@ fn main() -> status: ExitStatus pure {
   return Some<u64, u64>(value: value);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-5",
@@ -605,8 +597,8 @@ fn main() -> status: ExitStatus pure {
   return Some<4>(value: value);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-5",
@@ -646,8 +638,8 @@ fn main() -> status: ExitStatus pure {
   return a +wrap b;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "EFF-1",
@@ -662,8 +654,8 @@ fn main() -> status: ExitStatus pure {
   return deref(value);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "EFF-1",
@@ -683,8 +675,8 @@ fn touch(pair: &Pair) -> out: u64 reads(pair.middle) {
   return deref(pair).left;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "EFF-1",
@@ -699,8 +691,8 @@ fn main() -> status: ExitStatus pure {
   return deref(data).len;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "EFF-2",
@@ -725,8 +717,8 @@ fn record(stats: &Stats) -> result: unit writes(stats.count), writes(stats.total
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "EFF-2",
@@ -742,8 +734,8 @@ fn main() -> status: ExitStatus pure {
   return old;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "EFF-1",
@@ -764,8 +756,8 @@ fn reset(pair: &Pair) -> result: unit writes(pair), writes(pair.first) {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "EFF-1",
@@ -786,8 +778,8 @@ fn inspect(pair: &Pair) -> result: u8 reads(pair), reads(pair.first) {
   return whole.second;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "EFF-1",
@@ -801,10 +793,10 @@ fn main() -> status: ExitStatus pure {
     // -------------------------------------------------------------------
     Probe {
         name: "buffer-length-is-not-a-u64.wf",
-        source: br#"fn main() -> status: ExitStatus pure {
+        source: br#"fn main() -> status: std::process::ExitStatus pure {
   let flag = 1_u64 > 0_u64;
   let store = box_array_filled::<u8>(count: flag, value: 0_u8);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-5",
@@ -814,10 +806,10 @@ fn main() -> status: ExitStatus pure {
         // Field suffixes after indices are supported; this scalar element
         // still has no fields. Pin that type rule, not the retired path limit.
         name: "scalar-buffer-element-has-no-fields.wf",
-        source: br#"fn main() -> status: ExitStatus pure {
+        source: br#"fn main() -> status: std::process::ExitStatus pure {
   let store = array_filled::<u8, 4>(value: 0_u8);
   let one = store[0_u64].value;
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-5",
@@ -847,10 +839,10 @@ fn measure(view: u64) -> out: u64 pure {
   return view;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let view = &digits[0_u64..2_u64];
   let n = measure(view: view);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-5",
@@ -887,8 +879,8 @@ fn main() -> status: ExitStatus pure {
   return value.count;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-5",
@@ -908,8 +900,8 @@ fn peek(pair: Pair) -> out: u64 pure {
   return pair.middle;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-5",
@@ -924,10 +916,10 @@ fn main() -> status: ExitStatus pure {
   seq: u64;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let ticket = Ticket(seq: 1_u64);
   set ticket = 2_u64;
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-5",
@@ -941,9 +933,9 @@ fn main() -> status: ExitStatus pure {
     },
     Probe {
         name: "boolean-operand-is-an-integer.wf",
-        source: br#"fn main() -> status: ExitStatus pure {
+        source: br#"fn main() -> status: std::process::ExitStatus pure {
   let flag = band(1_u64, 2_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-5",
@@ -951,13 +943,13 @@ fn main() -> status: ExitStatus pure {
     },
     Probe {
         name: "match-scrutinee-is-not-an-enum.wf",
-        source: br#"fn main() -> status: ExitStatus pure {
+        source: br#"fn main() -> status: std::process::ExitStatus pure {
   let value = 1_u64;
   match value {
     Ok(value: inner) => {
     }
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-5",
@@ -972,10 +964,10 @@ fn main() -> status: ExitStatus pure {
   return 0_T;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let flag = 1_u64 > 0_u64;
   let a = zeroed::<Bool>(sample: flag);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "FORM-5",
@@ -996,10 +988,10 @@ fn main() -> status: ExitStatus pure {
   return x;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let s = 3_u64;
   let r = need(x: s);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "FN-8",
@@ -1014,12 +1006,12 @@ fn main() -> status: ExitStatus pure {
   return x;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let bytes = array_filled::<u8, 1>(value: 3_u8);
   let raw = bytes[0_u64];
   let s = cvt::<u8, u32>(raw);
   let r = need(x: s);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "FN-8",
@@ -1039,10 +1031,10 @@ fn main() -> status: ExitStatus pure {
   return x;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let s = 3_i64;
   let r = need(x: s);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "FN-8",
@@ -1056,10 +1048,10 @@ fn main() -> status: ExitStatus pure {
   return x;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let v = 2.0_f64;
   let r = need(x: v);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "FN-8",
@@ -1073,10 +1065,10 @@ fn main() -> status: ExitStatus pure {
   return x;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let data = array_filled::<u8, 4>(value: 0_u8);
   let r = need(x: data[0_u64]);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "FN-8",
@@ -1096,8 +1088,8 @@ fn outer(names: &[u8]) -> out: u64 pure {
   return r;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "FN-8",
@@ -1116,9 +1108,9 @@ fn main() -> status: ExitStatus pure {
   return x;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = need::<4>(x: 9_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "FN-8",
@@ -1135,9 +1127,9 @@ fn main() -> status: ExitStatus pure {
   return value;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let ignored = bad::<u8>(value: 0_u8);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "FN-9",
@@ -1154,9 +1146,9 @@ fn main() -> status: ExitStatus pure {
   value: T;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let token = Token<u64>(value: 1_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "PROV-6",
@@ -1170,8 +1162,8 @@ fn main() -> status: ExitStatus pure {
 
 const w: Wrap<u64> = Wrap<u64>(other: 1_u64);
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "GRAM-8",
@@ -1194,7 +1186,7 @@ fn main() -> status: ExitStatus pure {
   return n;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let c = box_array_filled::<u8>(count: 4_u64, value: 0_u8);
   let flag = 1_u64;
   let taken = 0_u64;
@@ -1203,7 +1195,7 @@ fn main() -> status: ExitStatus pure {
   } else {
     set taken = 7_u64;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "LIV-1",
@@ -1221,12 +1213,12 @@ fn main() -> status: ExitStatus pure {
   return n;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let c = box_array_filled::<u8>(count: 4_u64, value: 0_u8);
   for (i in 0_u64..2_u64) {
     let taken = measure(cell: move c);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "OWN-11",
@@ -1246,7 +1238,7 @@ fn main() -> status: ExitStatus pure {
     // -------------------------------------------------------------------
     Probe {
         name: "an-affine-factor-that-is-not-a-measure.wf",
-        source: br#"fn main() -> status: ExitStatus pure {
+        source: br#"fn main() -> status: std::process::ExitStatus pure {
   let limit = 4_u64;
   let seen = 0_u64;
   for (
@@ -1254,7 +1246,7 @@ fn main() -> status: ExitStatus pure {
     invariant bounded: seen <= imin(limit, limit)
   ) {
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "INV-1",
@@ -1335,7 +1327,7 @@ fn every_diagnostic_sentence_is_pinned_by_a_probe() {
 /// repair directs, the rejected judgment succeeds where its construct runs,
 /// in a state that is not contradictory; and nothing it writes is text a rule
 /// rejects. A sentence alone can drift from both, as the printed repairs did
-/// before v0.72. A pair makes the repair checkable: each repaired source must
+/// before v0.73. A pair makes the repair checkable: each repaired source must
 /// be accepted, and no judgment in a function it declares may succeed only
 /// because the state it is asked in is contradictory. A guard around a
 /// refuted goal, for one, compiles and is caught by the second condition.
@@ -1368,9 +1360,9 @@ const REPAIRS: &[RepairPair] = &[
   return x;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = small(x: 20_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "FN-8",
@@ -1384,9 +1376,9 @@ fn main() -> status: ExitStatus pure {
   return x;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = small(x: 5_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
@@ -1403,9 +1395,9 @@ fn caller(y: u64) -> result: u64 pure {
   return r;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = caller(y: 3_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "FN-8",
@@ -1427,9 +1419,9 @@ fn caller(y: u64) -> result: u64 pure contract {
   return r;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = caller(y: 3_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
             br#"fn small(x: u64) -> result: u64 pure contract {
@@ -1446,9 +1438,9 @@ fn caller(y: u64) -> result: u64 pure {
   return 0_u64;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = caller(y: 3_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         ],
@@ -1474,9 +1466,9 @@ fn caller(y: u64) -> result: u64 pure {
   return r;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = caller(y: 3_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "FN-8",
@@ -1506,9 +1498,9 @@ fn caller(y: u64) -> result: u64 pure {
   return r;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = caller(y: 3_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
             br#"fn small(x: u64) -> result: u64 pure contract {
@@ -1533,9 +1525,9 @@ fn caller(y: u64) -> result: u64 pure {
   return 0_u64;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = caller(y: 3_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         ],
@@ -1562,8 +1554,8 @@ fn first(view: &[Stats]) -> result: u64 reads(view) contract {
   return r;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "FN-8",
@@ -1592,8 +1584,8 @@ fn first(view: &[Stats]) -> result: u64 reads(view) contract {
   return 0_u64;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
@@ -1614,9 +1606,9 @@ fn caller(k: u64) -> result: u64 pure {
   return 0_u64;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = caller(k: 3_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "FN-8",
@@ -1642,9 +1634,9 @@ fn caller(k: u64) -> result: u64 pure {
   return 0_u64;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = caller(k: 3_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
@@ -1659,9 +1651,9 @@ fn main() -> status: ExitStatus pure {
   return 20_u64;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = f();
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "FN-9",
@@ -1676,9 +1668,9 @@ fn main() -> status: ExitStatus pure {
   return 5_u64;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = f();
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
             br#"fn f() -> result: u64 pure contract {
@@ -1687,9 +1679,9 @@ fn main() -> status: ExitStatus pure {
   return 20_u64;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = f();
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         ],
@@ -1702,9 +1694,9 @@ fn main() -> status: ExitStatus pure {
   return x;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = f(x: 3_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "FN-9",
@@ -1721,9 +1713,9 @@ fn main() -> status: ExitStatus pure {
   return x;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = f(x: 3_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
@@ -1745,9 +1737,9 @@ fn f(x: u64) -> result: u64 pure contract {
   return z;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = f(x: 3_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "FN-9",
@@ -1771,9 +1763,9 @@ fn f(x: u64) -> result: u64 pure contract {
   return z;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = f(x: 3_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
@@ -1785,8 +1777,8 @@ fn main() -> status: ExitStatus pure {
   return Err<i32, i32>(error: value);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "FN-9",
@@ -1800,16 +1792,16 @@ fn main() -> status: ExitStatus pure {
   return Ok<i32, i32>(value: value);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
             br#"fn only_error(value: i32) -> out: Result<i32, i32> pure {
   return Err<i32, i32>(error: value);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         ],
@@ -1819,9 +1811,9 @@ fn main() -> status: ExitStatus pure {
     // -------------------------------------------------------------------
     RepairPair {
         name: "integer-domain-refuted.wf",
-        rejected: br#"fn main() -> status: ExitStatus pure {
+        rejected: br#"fn main() -> status: std::process::ExitStatus pure {
   let y = 255_u8 + 1_u8;
-  return exit_status(code: y);
+  return std::process::exit_status(code: y);
 }
 "#,
         rule: "OP-2",
@@ -1830,14 +1822,14 @@ fn main() -> status: ExitStatus pure {
             "\n  mechanical_fix: the operands that reach this operation make `255_u8 +defined 1_u8` false, so the exact operation cannot execute here: change the operands or their type, or write the `+wrap`, `+checked` or `+sat` form for the result the program intends\n",
         ],
         repaired: &[
-            br#"fn main() -> status: ExitStatus pure {
+            br#"fn main() -> status: std::process::ExitStatus pure {
   let y = 254_u8 + 1_u8;
-  return exit_status(code: y);
+  return std::process::exit_status(code: y);
 }
 "#,
-            br#"fn main() -> status: ExitStatus pure {
+            br#"fn main() -> status: std::process::ExitStatus pure {
   let y = 255_u8 +wrap 1_u8;
-  return exit_status(code: y);
+  return std::process::exit_status(code: y);
 }
 "#,
         ],
@@ -1849,9 +1841,9 @@ fn main() -> status: ExitStatus pure {
   return y;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = bump(x: 7_u8);
-  return exit_status(code: r);
+  return std::process::exit_status(code: r);
 }
 "#,
         rule: "OP-2",
@@ -1867,9 +1859,9 @@ fn main() -> status: ExitStatus pure {
   return y;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = bump(x: 7_u8);
-  return exit_status(code: r);
+  return std::process::exit_status(code: r);
 }
 "#,
             br#"fn bump(x: u8) -> result: u8 pure {
@@ -1880,9 +1872,9 @@ fn main() -> status: ExitStatus pure {
   return 0_u8;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = bump(x: 7_u8);
-  return exit_status(code: r);
+  return std::process::exit_status(code: r);
 }
 "#,
             br#"fn bump(x: u8) -> result: u8 pure {
@@ -1890,9 +1882,9 @@ fn main() -> status: ExitStatus pure {
   return y;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = bump(x: 7_u8);
-  return exit_status(code: r);
+  return std::process::exit_status(code: r);
 }
 "#,
         ],
@@ -1912,8 +1904,8 @@ fn main() -> status: ExitStatus pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "OP-2",
@@ -1933,8 +1925,8 @@ fn main() -> status: ExitStatus pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
@@ -1952,8 +1944,8 @@ fn main() -> status: ExitStatus pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "OP-2",
@@ -1973,8 +1965,8 @@ fn main() -> status: ExitStatus pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
@@ -1988,9 +1980,9 @@ fn main() -> status: ExitStatus pure {
   return sum;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = total();
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "OP-2",
@@ -2010,9 +2002,9 @@ fn main() -> status: ExitStatus pure {
   return sum;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = total();
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
             br#"fn total() -> result: u64 pure {
@@ -2025,9 +2017,9 @@ fn main() -> status: ExitStatus pure {
   return sum;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = total();
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
             br#"fn total() -> result: u64 pure {
@@ -2038,9 +2030,9 @@ fn main() -> status: ExitStatus pure {
   return sum;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = total();
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         ],
@@ -2055,8 +2047,8 @@ fn main() -> status: ExitStatus pure {
   return y;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "OP-2",
@@ -2072,8 +2064,8 @@ fn main() -> status: ExitStatus pure {
   return 0_u8;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
@@ -2082,9 +2074,9 @@ fn main() -> status: ExitStatus pure {
     // -------------------------------------------------------------------
     RepairPair {
         name: "conversion-domain-refuted.wf",
-        rejected: br#"fn main() -> status: ExitStatus pure {
+        rejected: br#"fn main() -> status: std::process::ExitStatus pure {
   let b = cvt::<u32, u8>(256_u32);
-  return exit_status(code: b);
+  return std::process::exit_status(code: b);
 }
 "#,
         rule: "OP-6",
@@ -2093,19 +2085,19 @@ fn main() -> status: ExitStatus pure {
             "\n  mechanical_fix: the value that reaches this conversion is outside `u8`: convert a value `u8` holds, choose a destination type that holds this one, or use `cvt.checked::<u32, u8>` and handle its `Err`\n",
         ],
         repaired: &[
-            br#"fn main() -> status: ExitStatus pure {
+            br#"fn main() -> status: std::process::ExitStatus pure {
   let b = cvt::<u32, u8>(255_u32);
-  return exit_status(code: b);
+  return std::process::exit_status(code: b);
 }
 "#,
-            br#"fn main() -> status: ExitStatus pure {
+            br#"fn main() -> status: std::process::ExitStatus pure {
   let b = cvt.checked::<u32, u8>(256_u32);
   match b {
     Ok(value: v) => {
-      return exit_status(code: v);
+      return std::process::exit_status(code: v);
     }
     Err(error: e) => {
-      return exit_status(code: 1_u8);
+      return std::process::exit_status(code: 1_u8);
     }
   }
 }
@@ -2118,9 +2110,9 @@ fn main() -> status: ExitStatus pure {
   return cvt::<u32, u8>(x);
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = narrow(x: 7_u32);
-  return exit_status(code: r);
+  return std::process::exit_status(code: r);
 }
 "#,
         rule: "OP-6",
@@ -2135,9 +2127,9 @@ fn main() -> status: ExitStatus pure {
   return cvt::<u32, u8>(x);
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = narrow(x: 7_u32);
-  return exit_status(code: r);
+  return std::process::exit_status(code: r);
 }
 "#,
             br#"fn narrow(x: u32) -> result: u8 pure {
@@ -2147,9 +2139,9 @@ fn main() -> status: ExitStatus pure {
   return 0_u8;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = narrow(x: 7_u32);
-  return exit_status(code: r);
+  return std::process::exit_status(code: r);
 }
 "#,
             br#"fn narrow(x: u32) -> result: u8 pure {
@@ -2164,9 +2156,9 @@ fn main() -> status: ExitStatus pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = narrow(x: 7_u32);
-  return exit_status(code: r);
+  return std::process::exit_status(code: r);
 }
 "#,
         ],
@@ -2182,9 +2174,9 @@ fn narrow(x: u32) -> result: u8 pure {
   return cvt::<u32, u8>(v);
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = narrow(x: 7_u32);
-  return exit_status(code: r);
+  return std::process::exit_status(code: r);
 }
 "#,
         rule: "OP-6",
@@ -2204,9 +2196,9 @@ fn narrow(x: u32) -> result: u8 pure {
   return 0_u8;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = narrow(x: 7_u32);
-  return exit_status(code: r);
+  return std::process::exit_status(code: r);
 }
 "#],
     },
@@ -2221,8 +2213,8 @@ fn round(a: f64) -> result: i32 pure {
   return cvt::<f64, i32>(v);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "OP-6",
@@ -2242,8 +2234,8 @@ fn round(a: f64) -> result: i32 pure {
   return 0_i32;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
@@ -2252,10 +2244,10 @@ fn main() -> status: ExitStatus pure {
     // -------------------------------------------------------------------
     RepairPair {
         name: "bounds-refuted.wf",
-        rejected: br#"fn main() -> status: ExitStatus pure {
+        rejected: br#"fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u8, 4>(value: 0_u8);
   let v = values[5_u64];
-  return exit_status(code: v);
+  return std::process::exit_status(code: v);
 }
 "#,
         rule: "OP-4",
@@ -2264,16 +2256,16 @@ fn main() -> status: ExitStatus pure {
             "\n  mechanical_fix: `5_u64 < values.len` is false where this access executes: index within the storage, or give the storage a length that holds this index\n",
         ],
         repaired: &[
-            br#"fn main() -> status: ExitStatus pure {
+            br#"fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u8, 4>(value: 0_u8);
   let v = values[3_u64];
-  return exit_status(code: v);
+  return std::process::exit_status(code: v);
 }
 "#,
-            br#"fn main() -> status: ExitStatus pure {
+            br#"fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u8, 6>(value: 0_u8);
   let v = values[5_u64];
-  return exit_status(code: v);
+  return std::process::exit_status(code: v);
 }
 "#,
         ],
@@ -2283,11 +2275,11 @@ fn main() -> status: ExitStatus pure {
         // out of range at every length, so no longer storage is offered: the
         // statements that fix the offset are what the repair changes.
         name: "bounds-refuted-at-an-offset-that-is-no-constant.wf",
-        rejected: br#"fn main() -> status: ExitStatus pure {
+        rejected: br#"fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u8, 4>(value: 0_u8);
   let k = values.len;
   let v = values[k];
-  return exit_status(code: v);
+  return std::process::exit_status(code: v);
 }
 "#,
         rule: "OP-4",
@@ -2295,11 +2287,11 @@ fn main() -> status: ExitStatus pure {
             "\n  disposition: Refuted\n",
             "\n  mechanical_fix: `k < values.len` is false where this access executes: index within the storage, or change the statements or requirements that fix the index\n",
         ],
-        repaired: &[br#"fn main() -> status: ExitStatus pure {
+        repaired: &[br#"fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u8, 4>(value: 0_u8);
   let k = values.len - 1_u64;
   let v = values[k];
-  return exit_status(code: v);
+  return std::process::exit_status(code: v);
 }
 "#],
     },
@@ -2309,8 +2301,8 @@ fn main() -> status: ExitStatus pure {
   return deref(b)[i];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "OP-4",
@@ -2325,8 +2317,8 @@ fn main() -> status: ExitStatus pure {
   return deref(b)[i];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
             br#"fn get(b: &[u8], i: u64) -> result: u8 reads(b) {
@@ -2336,8 +2328,8 @@ fn main() -> status: ExitStatus pure {
   return 0_u8;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         ],
@@ -2353,8 +2345,8 @@ fn get(b: &[u8], i: u64) -> result: u8 reads(b) {
   return deref(b)[k];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "OP-4",
@@ -2374,8 +2366,8 @@ fn get(b: &[u8], i: u64) -> result: u8 reads(b) {
   return 0_u8;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
@@ -2389,8 +2381,8 @@ fn main() -> status: ExitStatus pure {
   return deref(lens)[deref(order)[j]];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "OP-4",
@@ -2408,8 +2400,8 @@ fn main() -> status: ExitStatus pure {
   return 0_u8;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
@@ -2425,8 +2417,8 @@ fn main() -> status: ExitStatus pure {
   return deref(rows)[i][k];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "OP-4",
@@ -2441,8 +2433,8 @@ fn main() -> status: ExitStatus pure {
   return deref(rows)[i][k];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
@@ -2458,8 +2450,8 @@ fn main() -> status: ExitStatus pure {
   return deref(rows)[i][k];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "OP-4",
@@ -2474,8 +2466,8 @@ fn main() -> status: ExitStatus pure {
   return deref(rows)[i][k];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
@@ -2488,9 +2480,9 @@ fn main() -> status: ExitStatus pure {
     // states such a count and builds [`every_allocation_repair_builds`].
     RepairPair {
         name: "allocation-fit-refuted.wf",
-        rejected: br#"fn main() -> status: ExitStatus pure {
+        rejected: br#"fn main() -> status: std::process::ExitStatus pure {
   let block = box_slots_new::<i64>(capacity: 18446744073709551615_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "OP-9",
@@ -2498,9 +2490,9 @@ fn main() -> status: ExitStatus pure {
             "\n  disposition: Refuted\n",
             "\n  mechanical_fix: `18446744073709551615_u64 <= 2305843009213693951_u64` is false, so this allocation cannot be formed: request the count the program needs. `2305843009213693951_u64` is the language's limit for this element type, not a bound to write: the selected target admits a smaller count, so a bound at or near that limit stops at target layout [STOR-6]\n",
         ],
-        repaired: &[br#"fn main() -> status: ExitStatus pure {
+        repaired: &[br#"fn main() -> status: std::process::ExitStatus pure {
   let block = box_slots_new::<i64>(capacity: 4_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
@@ -2511,9 +2503,9 @@ fn main() -> status: ExitStatus pure {
   return move block;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = make(length: 4_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "OP-9",
@@ -2529,9 +2521,9 @@ fn main() -> status: ExitStatus pure {
   return move block;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = make(length: 4_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
             br#"fn make(length: u64) -> values: Box<Slots<i64>> pure {
@@ -2543,9 +2535,9 @@ fn main() -> status: ExitStatus pure {
   return move empty;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = make(length: 4_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         ],
@@ -2562,9 +2554,9 @@ fn make(length: u64) -> values: Box<Slots<i64>> pure {
   return move block;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = make(length: 4_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "OP-9",
@@ -2588,9 +2580,9 @@ fn make(length: u64) -> values: Box<Slots<i64>> pure {
   return move block;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = make(length: 4_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
             br#"fn widen(x: u64) -> result: u64 pure {
@@ -2607,9 +2599,9 @@ fn make(length: u64) -> values: Box<Slots<i64>> pure {
   return move empty;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = make(length: 4_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         ],
@@ -2619,10 +2611,10 @@ fn main() -> status: ExitStatus pure {
     // -------------------------------------------------------------------
     RepairPair {
         name: "range-formation-refuted.wf",
-        rejected: br#"fn main() -> status: ExitStatus pure {
+        rejected: br#"fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u64, 4>(value: 0_u64);
   let view = &values[0_u64..5_u64];
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "REF-4",
@@ -2630,10 +2622,10 @@ fn main() -> status: ExitStatus pure {
             "\n  disposition: Refuted\n",
             "` is false where this range is formed: choose endpoints that satisfy it\n",
         ],
-        repaired: &[br#"fn main() -> status: ExitStatus pure {
+        repaired: &[br#"fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u64, 4>(value: 0_u64);
   let view = &values[0_u64..4_u64];
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
@@ -2644,8 +2636,8 @@ fn main() -> status: ExitStatus pure {
   return 0_u64;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "REF-4",
@@ -2661,8 +2653,8 @@ fn main() -> status: ExitStatus pure {
   return 0_u64;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
             br#"fn part(values: &[u64], hi: u64) -> result: u64 reads(values.len) {
@@ -2672,8 +2664,8 @@ fn main() -> status: ExitStatus pure {
   return 0_u64;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         ],
@@ -2690,8 +2682,8 @@ fn part(values: &[u64], hi: u64) -> result: u64 pure {
   return 0_u64;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "REF-4",
@@ -2711,8 +2703,8 @@ fn part(values: &[u64], hi: u64) -> result: u64 reads(values.len) {
   return 0_u64;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
@@ -2725,12 +2717,12 @@ fn main() -> status: ExitStatus pure {
   value: u64;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = slots_new::<Token, 2>();
   let t = Token(value: 1_u64);
   place_back(window: &r, value: move t);
   free_empty(window: move r);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "OP-14",
@@ -2742,14 +2734,14 @@ fn main() -> status: ExitStatus pure {
   value: u64;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let r = slots_new::<Token, 2>();
   let t = Token(value: 1_u64);
   place_back(window: &r, value: move t);
   let back = take_back(window: &r);
   let Token(value: v) = move back;
   free_empty(window: move r);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
@@ -2760,8 +2752,8 @@ fn main() -> status: ExitStatus pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "OP-14",
@@ -2776,8 +2768,8 @@ fn main() -> status: ExitStatus pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
@@ -2787,11 +2779,11 @@ fn main() -> status: ExitStatus pure {
     // -------------------------------------------------------------------
     RepairPair {
         name: "local-invariant-refuted.wf",
-        rejected: br#"fn main() -> status: ExitStatus pure {
+        rejected: br#"fn main() -> status: std::process::ExitStatus pure {
   let x = 255_u8;
   invariant fits: x <= 254_u8;
   let y = x +wrap 1_u8;
-  return exit_status(code: y);
+  return std::process::exit_status(code: y);
 }
 "#,
         rule: "INV-1",
@@ -2799,11 +2791,11 @@ fn main() -> status: ExitStatus pure {
             "\n  disposition: Refuted\n",
             "\n  mechanical_fix: `fits` is false where it is stated: correct the relation, or state one that the facts reaching it imply\n",
         ],
-        repaired: &[br#"fn main() -> status: ExitStatus pure {
+        repaired: &[br#"fn main() -> status: std::process::ExitStatus pure {
   let x = 255_u8;
   invariant fits: x <= 255_u8;
   let y = x +wrap 1_u8;
-  return exit_status(code: y);
+  return std::process::exit_status(code: y);
 }
 "#],
     },
@@ -2814,8 +2806,8 @@ fn main() -> status: ExitStatus pure {
   return x;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "INV-1",
@@ -2831,8 +2823,8 @@ fn main() -> status: ExitStatus pure {
   return x;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
             br#"fn check(x: u8) -> result: u8 pure {
@@ -2840,22 +2832,22 @@ fn main() -> status: ExitStatus pure {
   return x;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         ],
     },
     RepairPair {
         name: "loop-invariant-base-refuted.wf",
-        rejected: br#"fn main() -> status: ExitStatus pure {
+        rejected: br#"fn main() -> status: std::process::ExitStatus pure {
   let sum = 10_u64;
   for (
     i in 0_u64..4_u64,
     invariant low: sum <= 5_u64
   ) {
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "INV-1",
@@ -2865,24 +2857,24 @@ fn main() -> status: ExitStatus pure {
             "\n  mechanical_fix: `low` is false on entry to the loop: correct it, or change the values the loop starts from\n",
         ],
         repaired: &[
-            br#"fn main() -> status: ExitStatus pure {
+            br#"fn main() -> status: std::process::ExitStatus pure {
   let sum = 0_u64;
   for (
     i in 0_u64..4_u64,
     invariant low: sum <= 5_u64
   ) {
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
-            br#"fn main() -> status: ExitStatus pure {
+            br#"fn main() -> status: std::process::ExitStatus pure {
   let sum = 10_u64;
   for (
     i in 0_u64..4_u64,
     invariant low: sum <= 10_u64
   ) {
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         ],
@@ -2899,8 +2891,8 @@ fn main() -> status: ExitStatus pure {
   return sum;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "INV-1",
@@ -2921,14 +2913,14 @@ fn main() -> status: ExitStatus pure {
   return sum;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
     RepairPair {
         name: "loop-invariant-backedge-refuted.wf",
-        rejected: br#"fn main() -> status: ExitStatus pure {
+        rejected: br#"fn main() -> status: std::process::ExitStatus pure {
   let sum = 0_u64;
   for (
     i in 0_u64..4_u64,
@@ -2936,7 +2928,7 @@ fn main() -> status: ExitStatus pure {
   ) {
     set sum = sum + 1_u64;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "INV-1",
@@ -2945,7 +2937,7 @@ fn main() -> status: ExitStatus pure {
             "\n  disposition: Refuted\n",
             "\n  mechanical_fix: an iteration makes `fixed` false at the next loop header: correct it, or change the body so that every iteration preserves it\n",
         ],
-        repaired: &[br#"fn main() -> status: ExitStatus pure {
+        repaired: &[br#"fn main() -> status: std::process::ExitStatus pure {
   let sum = 0_u64;
   for (
     i in 0_u64..4_u64,
@@ -2953,7 +2945,7 @@ fn main() -> status: ExitStatus pure {
   ) {
     set sum = sum + 1_u64;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
@@ -2970,8 +2962,8 @@ fn main() -> status: ExitStatus pure {
   return sum;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "INV-1",
@@ -2993,8 +2985,8 @@ fn main() -> status: ExitStatus pure {
   return sum;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
@@ -3007,8 +2999,8 @@ fn main() -> status: ExitStatus pure {
   return deref(data).len;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "EFF-2",
@@ -3019,8 +3011,8 @@ fn main() -> status: ExitStatus pure {
   return deref(data).len;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
@@ -3037,10 +3029,10 @@ fn record(stats: &Stats) -> result: unit writes(stats.count), reads(stats.count)
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let stats = Stats(count: 0_u64, total: 0_u64);
   record(stats: &stats);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "EFF-1",
@@ -3058,10 +3050,10 @@ fn record(stats: &Stats) -> result: unit writes(stats.count) {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let stats = Stats(count: 0_u64, total: 0_u64);
   record(stats: &stats);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
@@ -3077,10 +3069,10 @@ fn copy_across(source: &Cell, destination: &Cell) -> result: unit reads(source.v
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let a = Cell(value: 4_u64);
   copy_across(source: &a, destination: &a);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "EFF-5",
@@ -3097,11 +3089,11 @@ fn copy_across(source: &Cell, destination: &Cell) -> result: unit reads(source.v
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let a = Cell(value: 4_u64);
   let b = Cell(value: 0_u64);
   copy_across(source: &a, destination: &b);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
@@ -3120,10 +3112,10 @@ fn main() -> status: ExitStatus pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u8, 4>(value: 1_u8);
   copy_within(values: &values, i: 1_u64, j: 1_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "EFF-5",
@@ -3140,10 +3132,10 @@ fn main() -> status: ExitStatus pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u8, 4>(value: 1_u8);
   copy_within(values: &values, i: 1_u64, j: 2_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
             br#"fn copy_within(values: &Array<u8, 4>, i: u64, j: u64) -> result: unit writes(values) contract {
@@ -3155,10 +3147,10 @@ fn main() -> status: ExitStatus pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u8, 4>(value: 1_u8);
   copy_within(values: &values, i: 1_u64, j: 1_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         ],
@@ -3179,10 +3171,10 @@ fn main() -> status: ExitStatus pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u64, 4>(value: 0_u64);
   record_run(values: &values, start: 0_u64, end: 2_u64, slot: 3_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "EFF-5",
@@ -3200,10 +3192,10 @@ fn main() -> status: ExitStatus pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u64, 4>(value: 0_u64);
   record_run(values: &values, start: 0_u64, end: 2_u64, slot: 3_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
@@ -3229,10 +3221,10 @@ fn shift(values: &Array<u8, 4>, a: u64, b: u64) -> result: unit writes(values) c
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u8, 4>(value: 1_u8);
   shift(values: &values, a: 1_u64, b: 2_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "EFF-5",
@@ -3258,10 +3250,10 @@ fn shift(values: &Array<u8, 4>, a: u64, b: u64) -> result: unit writes(values) c
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u8, 4>(value: 1_u8);
   shift(values: &values, a: 1_u64, b: 2_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
             br#"fn copy_within(values: &Array<u8, 4>, i: u64, j: u64) -> result: unit reads(values[i]), writes(values[j]) contract {
@@ -3281,10 +3273,10 @@ fn shift(values: &Array<u8, 4>, a: u64, b: u64) -> result: unit writes(values) c
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u8, 4>(value: 1_u8);
   shift(values: &values, a: 1_u64, b: 2_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
             br#"fn copy_within(values: &Array<u8, 4>, i: u64, j: u64) -> result: unit writes(values) contract {
@@ -3304,10 +3296,10 @@ fn shift(values: &Array<u8, 4>, a: u64, b: u64) -> result: unit writes(values) c
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u8, 4>(value: 1_u8);
   shift(values: &values, a: 1_u64, b: 2_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         ],
@@ -3336,11 +3328,11 @@ fn caller(r: &Slots<u64, 4>, k: u64) -> result: u64 writes(r) contract {
   return x;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let window = slots_new::<u64, 4>();
   place_back(window: &window, value: 5_u64);
   let x = caller(r: &window, k: 0_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "EFF-5",
@@ -3370,11 +3362,11 @@ fn caller(r: &Slots<u64, 4>, k: u64) -> result: u64 writes(r) contract {
   return 0_u64;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let window = slots_new::<u64, 4>();
   place_back(window: &window, value: 5_u64);
   let x = caller(r: &window, k: 0_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
             br#"fn read_then_append(r: &Slots<u64, 4>, i: u64) -> result: u64 reads(r[i]), writes(r.next), writes(r.len) contract {
@@ -3397,11 +3389,11 @@ fn caller(r: &Slots<u64, 4>, k: u64) -> result: u64 writes(r) contract {
   return x;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let window = slots_new::<u64, 4>();
   place_back(window: &window, value: 5_u64);
   let x = caller(r: &window, k: 0_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
             br#"fn read_then_append(r: &Slots<u64, 4>, i: u64) -> result: u64 writes(r) contract {
@@ -3423,11 +3415,66 @@ fn caller(r: &Slots<u64, 4>, k: u64) -> result: u64 writes(r) contract {
   return x;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let window = slots_new::<u64, 4>();
   place_back(window: &window, value: 5_u64);
   let x = caller(r: &window, k: 0_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+        ],
+    },
+    RepairPair {
+        // The same [WIN-2] question from two arguments: an interface member's
+        // row is declared without a body, so nothing before the call bounds
+        // `i` and neither argument writes the window's length.
+        name: "call-separation-index-beside-next-two-arguments.wf",
+        rejected: br#"interface Stage {
+  fn step(x: &Slots<u64, 4>, w: &Slots<u64, 4>, i: u64) -> result: u64 reads(x[i]), writes(w.next);
+}
+
+fn outer<interface Stage>(r: &Slots<u64, 4>, k: u64) -> result: u64 writes(r) {
+  let y = Stage::step(x: r, w: r, i: k);
+  return y;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+        rule: "EFF-5",
+        sentences: &[
+            "\n  mechanical_fix: when the index can be below the window's length here, prove that before this call; otherwise pass an index this call proves below it\n",
+        ],
+        repaired: &[
+            br#"interface Stage {
+  fn step(x: &Slots<u64, 4>, w: &Slots<u64, 4>, i: u64) -> result: u64 reads(x[i]), writes(w.next);
+}
+
+fn outer<interface Stage>(r: &Slots<u64, 4>, k: u64) -> result: u64 writes(r) contract {
+  requires k < deref(r).len;
+} {
+  let y = Stage::step(x: r, w: r, i: k);
+  return y;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+            br#"interface Stage {
+  fn step(x: &Slots<u64, 4>, w: &Slots<u64, 4>, i: u64) -> result: u64 reads(x[i]), writes(w.next);
+}
+
+fn outer<interface Stage>(r: &Slots<u64, 4>, k: u64) -> result: u64 writes(r) contract {
+  requires 0_u64 < deref(r).len;
+} {
+  let y = Stage::step(x: r, w: r, i: 0_u64);
+  return y;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         ],
@@ -3450,10 +3497,10 @@ fn shift(values: &Array<u8, 4>, a: u64, b: u64) -> result: unit writes(values) c
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u8, 4>(value: 1_u8);
   shift(values: &values, a: 1_u64, b: 2_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "EFF-5",
@@ -3476,10 +3523,10 @@ fn shift(values: &Array<u8, 4>, a: u64, b: u64) -> result: unit writes(values) c
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u8, 4>(value: 1_u8);
   shift(values: &values, a: 1_u64, b: 2_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
             br#"fn copy_across(source: &u8, destination: &u8) -> result: unit reads(source), writes(destination) {
@@ -3496,10 +3543,10 @@ fn shift(values: &Array<u8, 4>, a: u64, b: u64) -> result: unit writes(values) c
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u8, 4>(value: 1_u8);
   shift(values: &values, a: 1_u64, b: 2_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         ],
@@ -3527,8 +3574,8 @@ fn exchange(rows: &Array<Node, 2>, i: u64, j: u64) -> result: unit writes(rows) 
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "OP-11",
@@ -3556,8 +3603,8 @@ fn exchange(rows: &Array<Node, 2>, i: u64, j: u64) -> result: unit writes(rows) 
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
@@ -3575,8 +3622,8 @@ fn main() -> status: ExitStatus pure {
   return picked;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "GIVE-1",
@@ -3595,16 +3642,16 @@ fn main() -> status: ExitStatus pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
     RepairPair {
         name: "set-of-an-undeclared-name.wf",
-        rejected: br#"fn main() -> status: ExitStatus pure {
+        rejected: br#"fn main() -> status: std::process::ExitStatus pure {
   set total = 1_u64;
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "SET-1",
@@ -3612,18 +3659,18 @@ fn main() -> status: ExitStatus pure {
             "]: UndeclaredSetTarget\n",
             "\n  spelling: total\n  mechanical_fix: no binding `total` is in scope, so this `set` declares nothing: write it as `let total = ...;`, keeping its right-hand side, to declare the binding here, or name a binding that is in scope\n",
         ],
-        repaired: &[br#"fn main() -> status: ExitStatus pure {
+        repaired: &[br#"fn main() -> status: std::process::ExitStatus pure {
   let total = 1_u64;
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
     RepairPair {
         name: "front-operation-on-a-slots-window.wf",
-        rejected: br#"fn main() -> status: ExitStatus pure {
+        rejected: br#"fn main() -> status: std::process::ExitStatus pure {
   let values = slots_new::<u8, 2>();
   place_front(window: &values, value: 7_u8);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "OP-10",
@@ -3631,30 +3678,30 @@ fn main() -> status: ExitStatus pure {
             "]: UnadmittedOperandShape\n",
             "\n  expected: a `Ring` operand, which is what this row admits\n  mechanical_fix: pass an operand of the admitted shape, or use an operation whose row admits this operand's shape\n",
         ],
-        repaired: &[br#"fn main() -> status: ExitStatus pure {
+        repaired: &[br#"fn main() -> status: std::process::ExitStatus pure {
   let values = slots_new::<u8, 2>();
   place_back(window: &values, value: 7_u8);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
     RepairPair {
         name: "bound-function-exceeds-the-formal-row.wf",
         rejected: br#"interface Disposer {
-  fn release(factory: &HandleFactory, file: ReadFile) -> function_result: unit pure;
+  fn release(factory: &std::io::HandleFactory, file: std::fs::ReadFile) -> function_result: unit pure;
 }
 
 binding First : Disposer {
   release = release_read_file;
 }
 
-fn release_read_file(factory: &HandleFactory, file: ReadFile) -> function_result: unit writes(factory) {
-  let closed = close_read(factory: factory, file: move file);
+fn release_read_file(factory: &std::io::HandleFactory, file: std::fs::ReadFile) -> function_result: unit writes(factory) {
+  let closed = std::fs::close_read(factory: factory, file: move file);
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "FN-4",
@@ -3663,20 +3710,20 @@ fn main() -> status: ExitStatus pure {
             "\n  mechanical_fix: supply a function whose signature, row and contract meet the formal interface, or weaken the formal interface to what the supplied function declares\n",
         ],
         repaired: &[br#"interface Disposer {
-  fn release(factory: &HandleFactory, file: ReadFile) -> function_result: unit writes(factory);
+  fn release(factory: &std::io::HandleFactory, file: std::fs::ReadFile) -> function_result: unit writes(factory);
 }
 
 binding First : Disposer {
   release = release_read_file;
 }
 
-fn release_read_file(factory: &HandleFactory, file: ReadFile) -> function_result: unit writes(factory) {
-  let closed = close_read(factory: factory, file: move file);
+fn release_read_file(factory: &std::io::HandleFactory, file: std::fs::ReadFile) -> function_result: unit writes(factory) {
+  let closed = std::fs::close_read(factory: factory, file: move file);
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
@@ -3689,8 +3736,8 @@ fn main() -> status: ExitStatus pure {
   return Ok<u64, Overflow>(value: measured), Ok<u64, Overflow>(value: measured);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         rule: "CALL-4",
@@ -3704,8 +3751,8 @@ fn main() -> status: ExitStatus pure {
   return Ok<u64, Overflow>(value: measured), Ok<u64, Overflow>(value: measured);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#],
     },
@@ -3818,9 +3865,9 @@ fn an_allocation_bound_at_the_language_ceiling_stops_at_target_layout() {
   return move block;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = make(length: 4_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     super::check(
@@ -3846,13 +3893,13 @@ fn main() -> status: ExitStatus pure {
 /// repair [DIAG-1].
 #[test]
 fn a_guard_around_a_refuted_goal_succeeds_only_in_a_contradictory_state() {
-    let guarded = br#"fn main() -> status: ExitStatus pure {
+    let guarded = br#"fn main() -> status: std::process::ExitStatus pure {
   let x = 255_u8;
   if x +defined 1_u8 {
     let y = x + 1_u8;
-    return exit_status(code: y);
+    return std::process::exit_status(code: y);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let contradictions = contradictory_successes("guarded-refuted-goal.wf", guarded)

@@ -1,4 +1,4 @@
 pkg::bits: [];
-pkg: [pkg::bits];
+pkg: [pkg::bits, std::process];
 
 entry main = pkg::main;

@@ -70,33 +70,12 @@ rarely insert at the same place.
   it if it withholds postconditions that ordinary programs need. A persistent
   LLVM planning adapter waits for warm-build measurements that show stock
   ThinLTO planning to be a material share of edit latency. External-package
-  resolution and library composition remain deferred by scope; reopen only
-  when selected by the owner, with package identity/version/renaming cases.
+  resolution and composition of libraries other than the standard library
+  remain deferred by scope; reopen only when selected by the owner, with
+  package identity/version/renaming cases.
   Subtree-private independently compiled modules remain unselected; reconsider
   for a concrete privacy consumer that cannot use one module's private
   implementation files.
-
-- **Rebuild the prelude and a standard library on modules.** The owner
-  selected this as the work after the modular compilation PR: library code
-  becomes registered modules with `module.wfm` interfaces, checked and cached
-  like program modules, and programs reach it through the ordinary qualified
-  path, alias and access rules instead of declarations the compiler injects
-  into every source bundle. Its investigation must settle which prelude parts
-  stay compiler-owned (the PRE-1 operation identities, opaque storage and the
-  runtime units) and which become source modules; how a program names library
-  modules, given that the name-resolution decision defers external
-  dependency-name binding and the modular design keeps the prelude out of an
-  ordinary source package called `std`; whether library modules join every
-  closure or only the entries that name them; and how their verdicts, proof
-  receipts and objects are reused across programs. The measured container
-  libraries under `research/experiments/container-representation/` are the
-  first standard-library candidates. Benefit: one naming and visibility rule
-  for library and program code, library checks reused instead of repeated in
-  every composition, and fewer compiler-owned declaration paths; the cost, the
-  specification changes (PRE-1, PROG-2) and the reuse gain are unverified.
-  Validate with the whole conformance corpus and test programs unchanged in
-  meaning, and a composition's front-end time before and after. Start after
-  the modular compilation PR merges, as its own investigation.
 
 - **Select the modular conversion companion.** The
   [conversion comparison](../research/investigations/numeric-conversions/DESIGN.md#companion-operations-and-explicit-deferrals)
@@ -158,6 +137,43 @@ rarely insert at the same place.
   extensions below remain a separate question.
 
 ## Checker precision and proof cost
+
+- **A module check's cost for a library interface still grows with the
+  module's functions.** Reading `std::process`'s closure (the `std::io`,
+  `std::text`, `std::fs` and `std::process` interfaces) costs a one-function
+  module 71.5 million instructions and a 16-function module 121.5 million
+  ([library-modules checker costs](../research/investigations/library-modules/DESIGN.md#the-checkers-per-function-costs-after-the-split)).
+  The nominal passes no longer contribute: the layout recursion judgment now
+  walks the nominal table only after it changed, and postcondition selector
+  admission indexes signatures by path. The remaining 50 million
+  instructions are resolution's table building and public-closure check
+  (`build_tables`, `check_public_closure` in `compiler/src/resolution/engine/`,
+  about 25 million), the entailment schedule of the function inventory
+  (`analyze_function_inventory` in `compiler/src/semantic/check.rs`, about 11
+  million), instantiation-cycle rejection (7 million) and concrete signature
+  collection (6 million). Impact: every check of a module that names a
+  library module, and every program returning `ExitStatus`, pays per
+  function for declarations it does not use. Change: find in each the work
+  repeated per function over every declaration or signature of the closure
+  and key it by declaration instead. Validate with the same comparison: H16
+  at most 1.1 times H1, verdicts unchanged. Reopen when check time limits an
+  experiment.
+
+- **A small module check is mostly parsing the prelude again.** Checking a
+  one-function module that names no library module executes 66.9 million
+  instructions, of which parsing takes 24.0 million and finalizing 16.5
+  million, and 97 percent of the bytes parsed are the 24 prelude records
+  (4,425 bytes against the module's 105); the parser's arm selection
+  (`row_score` under `select_arm` in `compiler/src/syntax/parser/diagnostic.rs`)
+  alone takes 13.9 million, since it scans every row of a decision
+  ([library-modules measurements](../research/investigations/library-modules/DESIGN.md#measurements-of-the-implemented-split),
+  W1 under callgrind). Impact: a fixed cost of every check and composition,
+  now the largest part of a small module check. Change: select a decision's
+  arm through an index by the first token's terminals instead of a scan, and
+  parse the prelude, which the compiler fixes at build time, once per
+  process rather than once per check. Validate with the same callgrind
+  comparison and unchanged parse outcomes over the corpus. Reopen when check
+  time limits an experiment.
 
 - **Some ENT-3 sources read no measure operand.** S5/S6 copies, S1
   comparisons, S11 counted captures, every S7 operation row and a checked
@@ -1074,7 +1090,7 @@ rarely insert at the same place.
   from inside the park, was never built.
 
 - **There is no source-level foreign-function boundary.** C enters only as a
-  trusted linked definition of an ordinary declaration [PRE-1, SCOPE-3], which
+  trusted linked definition of an ordinary declaration [PRE-2, SCOPE-3], which
   the checker cannot inspect, and a C program cannot call Whitefoot code
   through a stated ABI. A real systems program needs both directions: calling
   an existing C library, and exporting a Whitefoot component, which the next

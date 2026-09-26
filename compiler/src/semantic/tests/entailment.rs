@@ -2725,8 +2725,8 @@ fn read(p: Pair, i: u64) -> result: i32 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -2781,8 +2781,8 @@ fn read(i: u64, left: Bool) -> result: i32 pure {
   return values[i];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let first = entailment(source, "read");
@@ -2824,8 +2824,8 @@ fn read(i: u64) -> result: i32 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -2858,8 +2858,8 @@ fn caller(flags: Flags) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics_dark(source, |outcome| {
@@ -2919,8 +2919,8 @@ fn caller(value: u64) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "caller");
@@ -2955,8 +2955,8 @@ fn read() -> result: u8 pure {
   return inside;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -3026,8 +3026,8 @@ fn read(i: u64) -> result: i32 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(discharge_flags(source, "read"), vec![true]);
@@ -3049,8 +3049,8 @@ fn read(i: u64) -> result: i32 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -3088,8 +3088,8 @@ fn read(p: Pair, i: u64) -> result: i32 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -3117,8 +3117,8 @@ fn read(i: u64) -> result: i32 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -3154,8 +3154,8 @@ fn reflexive(value: u64) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let directed = accepted_entailment(source, "directed");
@@ -3216,8 +3216,8 @@ fn above_maximum(i: u64) -> result: i32 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     for (function, kind) in [
@@ -3275,8 +3275,8 @@ fn read(p: Pair, i: u64) -> result: i32 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -3313,8 +3313,8 @@ fn assigning_a_middle_vertex_projects_a_bound_needed_after_the_write() {
   return result;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "increment");
@@ -3348,8 +3348,8 @@ fn projection_does_not_preserve_a_bound_when_the_final_endpoint_is_written() {
   return result;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -3379,8 +3379,8 @@ fn increment(x: u8, middle: u8) -> result: u8 pure contract {
   return result;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -3413,8 +3413,8 @@ fn read(p: Pair) -> result: i32 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -3452,8 +3452,8 @@ fn read(i: u64) -> result: i32 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -3489,8 +3489,8 @@ fn read(i: u64) -> result: i32 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -3532,8 +3532,8 @@ fn read(i: u64) -> result: i32 pure {
   return in_wide;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -3591,8 +3591,8 @@ fn caller(left: u64, right: u64, choose: Bool) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "caller");
@@ -3656,8 +3656,8 @@ fn caller(left: u64, right: u64, choose: Bool) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "caller");
@@ -3731,8 +3731,8 @@ fn killed(left: u64, right: u64, choose: Bool) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let kept_summary = entailment(source, "kept");
@@ -3812,8 +3812,8 @@ fn mixed(left: u64, right: u64, choose: Bool) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     for function in ["same_strict", "both_explicit", "mixed"] {
@@ -3884,8 +3884,8 @@ fn caller(left: u64, right: u64, first: Bool, second: Bool, third: Bool) -> resu
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "caller");
@@ -3961,8 +3961,8 @@ fn killed_input(left: u64, right: u64, choose: Bool) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     for function in ["equality_input", "missing_input", "killed_input"] {
@@ -4047,8 +4047,8 @@ fn need_distinct(left: u64, right: u64) -> result: unit pure contract {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     for function in [
@@ -4111,8 +4111,8 @@ fn read(i: u64) -> result: i32 pure {
   return values[i];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -4145,8 +4145,8 @@ fn read(pick: Bool) -> result: i32 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -4183,8 +4183,8 @@ fn read(i: u64) -> result: i32 pure {
   return values[i];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -4222,8 +4222,8 @@ fn read(i: u64) -> result: i32 pure {
   return values[i];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -4251,8 +4251,8 @@ fn read(i: u64) -> result: i32 pure {
   return values[i];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -4278,8 +4278,8 @@ fn read(i: u64) -> result: i32 pure {
   return picked;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let outcomes = obligations(source, "read");
@@ -4318,8 +4318,8 @@ fn choose(value: i32, narrow: Bool) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "choose");
@@ -4482,8 +4482,8 @@ fn choose(value: i32, narrow: Bool) -> result: unit pure contract {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = accepted_entailment(source, "choose");
@@ -4572,8 +4572,8 @@ fn matched(value: i32, choice: Choice) -> result: i32 pure {
   return picked;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     {
@@ -4645,8 +4645,8 @@ fn scoped(value: i32, narrow: Bool) -> result: i32 pure {
   return picked;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     for function in ["computed", "scoped"] {
@@ -4689,8 +4689,8 @@ fn a_contradictory_first_delivery_edge_cannot_launder_the_fresh_receiver() {
   return picked;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "choose");
@@ -4763,8 +4763,8 @@ fn choose(value: i32, side: Bool) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "choose");
@@ -4823,8 +4823,8 @@ fn read(position: u64) -> result: u8 pure contract {
   return values[position];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -4868,8 +4868,8 @@ fn read(i: u64, flag: Bool) -> result: Result<i32, Fail> pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -4906,8 +4906,8 @@ fn read(i: u64) -> result: i32 pure {
   return before;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -4943,8 +4943,8 @@ fn read(i: u64) -> result: i32 pure {
   return values[i];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -4990,8 +4990,8 @@ fn return_after(i: u64, stop: Bool) -> result: i32 pure {
   return 0_i32;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -5025,8 +5025,8 @@ fn read(i: u64) -> result: i32 pure {
   return 0_i32;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -5063,8 +5063,8 @@ fn read(i: u64, leave_outer: Bool, leave_inner: Bool) -> result: i32 pure {
   return 0_i32;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -5107,8 +5107,8 @@ fn read(i: u64, fail: Bool, leave: Bool) -> result: Result<i32, Fail> pure {
   return Ok<i32, Fail>(value: 0_i32);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -5141,8 +5141,8 @@ fn read(i: u64, mutate: Bool, leave: Bool) -> result: i32 pure {
   return 0_i32;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -5178,8 +5178,8 @@ fn read(i: u64, mutate: Bool, leave: Bool) -> result: i32 pure {
   return 0_i32;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -5222,8 +5222,8 @@ fn read(i: u64, j: u64, stop: Bool, leave: Bool) -> result: i32 pure {
   return 0_i32;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -5257,8 +5257,8 @@ fn read(i: u64, leave_outer: Bool) -> result: i32 pure {
   return 0_i32;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -5290,8 +5290,8 @@ fn read() -> result: i32 pure {
   return total;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -5321,8 +5321,8 @@ fn read(j: u64) -> result: i32 pure {
   return total;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -5347,8 +5347,8 @@ fn read(upper: u64) -> result: i32 pure {
   return total;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -5385,8 +5385,8 @@ fn ordinary(i: u64) -> result: i32 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -5469,8 +5469,8 @@ fn read(index: u64, middle: u64) -> result: i32 pure contract {
   return values[index];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = accepted_entailment(source, "read");
@@ -5503,8 +5503,8 @@ fn a_write_preserves_a_survivor_bound_derived_through_an_implicit_type_edge() {
   return value + 1_u8;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = accepted_entailment(source, "increment");
@@ -5588,8 +5588,8 @@ fn mixed_edges(lower: u64, upper: u64, leave: Bool, fail: Bool) -> result: Resul
   return Ok<unit, Stop>(value: unit);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "mixed_edges");
@@ -5667,8 +5667,8 @@ fn joined(x: u64) -> result: i32 pure {
   return total;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let contradictory = entailment(source, "contradictory");
@@ -5743,8 +5743,8 @@ fn inconsistent_counted_root_metadata_fails_the_test_checker() {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "probe");
@@ -5826,7 +5826,7 @@ fn generic_counted_roots_are_deterministic_across_twenty_analyses() {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let small = slots_new::<u8, 2>();
   place_back(window: &small, value: 0_u8);
   place_back(window: &small, value: 0_u8);
@@ -5838,7 +5838,7 @@ fn main() -> status: ExitStatus pure {
   place_back(window: &large, value: 0_u8);
   place_back(window: &large, value: 0_u8);
   ranges::<5>(values: move large);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let normalized_instances = || {
@@ -5909,8 +5909,8 @@ fn read() -> result: i32 pure {
   return values[9_u64];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -5937,8 +5937,8 @@ fn read(i: u64) -> result: i32 pure {
   return values[i];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -5972,8 +5972,8 @@ fn read(i: u64, leave: Bool) -> result: i32 pure {
   return 0_i32;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -5999,8 +5999,8 @@ fn read(h: Holder, i: u64) -> result: u8 pure {
   return h.data[i];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let outcomes = obligations(source, "read");
@@ -6025,8 +6025,8 @@ fn read(j: u64) -> result: u8 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let outcomes = obligations(source, "read");
@@ -6054,8 +6054,8 @@ fn read(j: u64) -> result: u8 pure {
   return lens[order[j]];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let outcomes = obligations(source, "read");
@@ -6074,8 +6074,8 @@ fn a_failed_boolean_index_publishes_no_admitted_goal_origin() {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "remember");
@@ -6124,8 +6124,8 @@ fn from_range(order: &[u64]) -> result: u8 reads(order) {
   return values[deref(order)[0_u64]];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let window = obligations(source, "from_window")
@@ -6184,8 +6184,8 @@ fn return_after_failed_set(value: u8) -> result: u8 pure contract {
   return current;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
 
@@ -6284,8 +6284,8 @@ fn unknown(b: Slots<u8, 4>) -> result: u8 pure {
   return b[3_u64];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let sized = entailment(source, "sized");
@@ -6337,8 +6337,8 @@ fn a_measure_binding_carries_the_length_into_a_branch() {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(discharge_flags(source, "read"), vec![true]);
@@ -6358,8 +6358,8 @@ fn read() -> result: u8 pure {
   return deref(window)[3_u64];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -6401,8 +6401,8 @@ fn killed(b: Slots<u8, 4>, n: u64) -> result: u8 pure contract {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let kept = entailment(source, "kept");
@@ -6487,8 +6487,8 @@ fn killed() -> result: u8 pure {
   return sample;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let kept = entailment(source, "kept");
@@ -6554,8 +6554,8 @@ fn write(values: Slots<u16, count>, i: u64) -> result: u16 pure contract {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let outcomes = obligations(source, "write");
@@ -6615,8 +6615,8 @@ fn through_origin(input: u64) -> result: i32 pure {
   return 0_i32;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(accepted_discharge_flags(source, "direct"), vec![true]);
@@ -6670,8 +6670,8 @@ fn read(left_raw: u64, right_raw: u64) -> result: i32 pure {
   return 0_i32;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(accepted_discharge_flags(source, "read"), vec![true, true]);
@@ -6697,8 +6697,8 @@ fn read() -> result: i32 pure {
   return first +wrap second;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -6739,11 +6739,11 @@ fn a_set_commit_from_a_term_publishes_its_post_commit_value() {
   return out;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let input = array_filled::<u8, 4096>(value: 7_u8);
   let window = &input[0_u64..4096_u64];
   let byte = tail_byte(data: window);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = accepted_entailment(source, "tail_byte");
@@ -6779,8 +6779,8 @@ fn read(i: u64) -> result: i32 pure {
   return values[out];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = accepted_entailment(source, "read");
@@ -6814,8 +6814,8 @@ fn read(replacement: u64) -> result: i32 pure {
   return values[offset];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -6852,8 +6852,8 @@ fn read(replacement: u64) -> result: i32 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let through_let = br#"const count: u64 = 4_u64;
@@ -6871,8 +6871,8 @@ fn read(replacement: u64) -> result: i32 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -6906,8 +6906,8 @@ fn read(replacement: u64) -> result: i32 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let through_let = br#"const count: u64 = 4_u64;
@@ -6925,8 +6925,8 @@ fn read(replacement: u64) -> result: i32 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -6963,8 +6963,8 @@ fn read(replacement: u64) -> result: i32 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let through_let = br#"const count: u64 = 4_u64;
@@ -6982,8 +6982,8 @@ fn read(replacement: u64) -> result: i32 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -7022,8 +7022,8 @@ fn read(n: u64) -> result: i32 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -7084,8 +7084,8 @@ fn fresh(value: f64, stop: Bool) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     for (name, discharged) in [
@@ -7122,8 +7122,8 @@ fn a_conversion_of_an_affine_value_retains_both_ordered_domain_parents() {
   return cvt::<u32, u8>(total);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = accepted_entailment(source, "sum");
@@ -7152,8 +7152,8 @@ fn unsigned_remainder_publishes_its_strict_divisor_relation() {
   return remainder;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = accepted_entailment(source, "reduce");
@@ -7191,8 +7191,8 @@ fn signed_constant_remainders_publish_intervals_for_exact_arithmetic() {
   return left + right;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = accepted_entailment(source, "combine");
@@ -7240,8 +7240,8 @@ fn consumed(value: u32) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let unused = accepted_entailment(source, "unused");
@@ -7287,8 +7287,8 @@ fn a_measure_operand_is_read_as_its_term() {
   return value;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = accepted_entailment(source, "pick");
@@ -7337,8 +7337,8 @@ fn advance(start: u64, count: u64) -> result: u64 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = accepted_entailment(source, "advance");
@@ -7374,8 +7374,8 @@ fn signed(left: i32, right: i32) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_rule_kind(source, SemanticRule::Fn8, |kind| {
@@ -7395,8 +7395,8 @@ fn postcondition_exit_and_aggregate_roots_match_retained_metadata() {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "identity");
@@ -7424,8 +7424,8 @@ fn caller(value: i32) -> result: i32 pure contract {
   return called;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(b_first, "caller");
@@ -7461,8 +7461,8 @@ fn caller() -> result: i32 pure contract {
   return called;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let callee = entailment(u_fallback, "normalized");
@@ -7530,8 +7530,8 @@ fn propagated(value: i32) -> result: Result<i32, Overflow> pure contract {
   return Ok<i32, Overflow>(value: selected);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     for function in ["direct", "delivered", "propagated"] {
@@ -7631,8 +7631,8 @@ fn valued(outer: i32, replacement: i32) -> result: i32 pure {
   return delivered;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     for (function, selected_route) in [("same_binding", false), ("matched", true), ("valued", true)]
@@ -7670,8 +7670,8 @@ fn read(i: u64) -> result: i32 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -7730,8 +7730,8 @@ fn unguarded(p: u64) -> result: i32 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -7824,8 +7824,8 @@ fn relation_killed(i: u64, j: u64) -> result: u64 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(discharge_flags(source, "direct"), vec![true]);
@@ -7883,8 +7883,8 @@ fn high(i: u64) -> result: i32 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let low = entailment(source, "low");
@@ -7937,8 +7937,8 @@ fn direct_read(i: u64) -> result: i32 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let bound = obligations(source, "bound_read");
@@ -7981,8 +7981,8 @@ fn read(i: u64) -> result: i32 pure contract {
   return values[i];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -8013,8 +8013,8 @@ fn read(i: u64) -> result: i32 pure contract {
   return values[i];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -8041,8 +8041,8 @@ fn read() -> result: i32 pure contract {
   return values[9_u64];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let outcomes = obligations(source, "read");
@@ -8069,8 +8069,8 @@ fn read(i: u64) -> result: i32 pure contract {
   return values[i];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -8088,7 +8088,7 @@ fn main() -> status: ExitStatus pure {
 
 fn range_contract_source(contract: &str, body: &str) -> String {
     format!(
-        "const endpoints: Array<u64, 2> =[0_u64, 0_u64];\n\nfn publish(factory: &HandleFactory, output: &OutputStream, source: &[u8], start: u64, end: u64) -> result: unit reads(source), writes(factory), writes(output){contract} {{\n{body}  return unit;\n}}\n"
+        "const endpoints: Array<u64, 2> =[0_u64, 0_u64];\n\nfn publish(factory: &std::io::HandleFactory, output: &std::io::OutputStream, source: &[u8], start: u64, end: u64) -> result: unit reads(source), writes(factory), writes(output){contract} {{\n{body}  return unit;\n}}\n"
     )
 }
 
@@ -8096,7 +8096,7 @@ fn range_contract_source(contract: &str, body: &str) -> String {
 fn a_failed_endpoint_expression_prevents_unreached_call_requirements() {
     let source = range_contract_source(
         "",
-        "  let outcome = write_once(factory: factory, output: output, source: source, start: 0_u64, end: endpoints[2_u64]);\n",
+        "  let outcome = std::io::write_once(factory: factory, output: output, source: source, start: 0_u64, end: endpoints[2_u64]);\n",
     );
     let outcomes = obligations(source.as_bytes(), "publish");
     let [endpoint_index] = outcomes.as_slice() else {
@@ -8114,7 +8114,7 @@ fn a_failed_endpoint_expression_prevents_unreached_call_requirements() {
 fn one_ordinary_call_retains_two_independent_ordered_range_requirements() {
     let source = range_contract_source(
         "",
-        "  let outcome = write_once(factory: factory, output: output, source: source, start: start, end: end);\n",
+        "  let outcome = std::io::write_once(factory: factory, output: output, source: source, start: start, end: end);\n",
     );
     let outcomes = call_goals(source.as_bytes(), "publish");
     assert_eq!(outcomes.len(), 2);
@@ -8141,7 +8141,7 @@ fn one_ordinary_call_retains_two_independent_ordered_range_requirements() {
 fn ordinary_source_relations_discharge_both_signature_ranges() {
     let source = range_contract_source(
         " contract {\n  requires start <= end;\n  requires end <= deref(source).len;\n}",
-        "  let outcome = write_once(factory: factory, output: output, source: source, start: start, end: end);\n",
+        "  let outcome = std::io::write_once(factory: factory, output: output, source: source, start: start, end: end);\n",
     );
     with_semantics(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
@@ -8188,7 +8188,7 @@ fn ordinary_source_relations_discharge_both_signature_ranges() {
 fn indexed_guards_discharge_structurally_identical_signature_ranges() {
     let source = range_contract_source(
         "",
-        "  let capacity = deref(source).len;\n  if endpoints[0_u64] <= endpoints[1_u64] {\n    if endpoints[1_u64] <= capacity {\n      let outcome = write_once(factory: factory, output: output, source: source, start: endpoints[0_u64], end: endpoints[1_u64]);\n    }\n  }\n",
+        "  let capacity = deref(source).len;\n  if endpoints[0_u64] <= endpoints[1_u64] {\n    if endpoints[1_u64] <= capacity {\n      let outcome = std::io::write_once(factory: factory, output: output, source: source, start: endpoints[0_u64], end: endpoints[1_u64]);\n    }\n  }\n",
     );
     let ranges = call_goals(source.as_bytes(), "publish");
     assert_eq!(ranges.len(), 2);
@@ -8233,7 +8233,7 @@ fn indexed_guards_discharge_structurally_identical_signature_ranges() {
 fn a_nonterm_endpoint_is_never_replaced_by_the_zero_term() {
     let source = range_contract_source(
         "",
-        "  let outcome = write_once(factory: factory, output: output, source: source, start: 1_u64, end: endpoints[0_u64]);\n",
+        "  let outcome = std::io::write_once(factory: factory, output: output, source: source, start: 1_u64, end: endpoints[0_u64]);\n",
     );
     let ranges = call_goals(source.as_bytes(), "publish");
     assert_eq!(ranges.len(), 2);
@@ -8256,11 +8256,11 @@ fn a_transfer_endpoint_is_bounded_by_end_and_not_beyond_it() {
 
 const table: Array<u8, count> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-fn under(factory: &HandleFactory, output: &OutputStream, source: &[u8]) -> result: unit reads(source), writes(factory), writes(output) {
+fn under(factory: &std::io::HandleFactory, output: &std::io::OutputStream, source: &[u8]) -> result: unit reads(source), writes(factory), writes(output) {
   let source_length = deref(source).len;
   let enough = 3_u64 <= source_length;
   if enough {
-    match write_once(factory: factory, output: output, source: source, start: 0_u64, end: 3_u64) {
+    match std::io::write_once(factory: factory, output: output, source: source, start: 0_u64, end: 3_u64) {
       Ok(value: next) => {
         let sample = table[next];
       }
@@ -8271,11 +8271,11 @@ fn under(factory: &HandleFactory, output: &OutputStream, source: &[u8]) -> resul
   return unit;
 }
 
-fn exact(factory: &HandleFactory, output: &OutputStream, source: &[u8]) -> result: unit reads(source), writes(factory), writes(output) {
+fn exact(factory: &std::io::HandleFactory, output: &std::io::OutputStream, source: &[u8]) -> result: unit reads(source), writes(factory), writes(output) {
   let source_length = deref(source).len;
   let enough = 4_u64 <= source_length;
   if enough {
-    match write_once(factory: factory, output: output, source: source, start: 0_u64, end: 4_u64) {
+    match std::io::write_once(factory: factory, output: output, source: source, start: 0_u64, end: 4_u64) {
       Ok(value: next) => {
         let sample = table[next];
       }
@@ -8324,10 +8324,10 @@ fn a_transfer_endpoint_bound_enters_the_observing_arm_only() {
     // payload is an unrelated required size and gains nothing [ENT-3.S12].
     let source = br#"const table: Array<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-fn main(text: &HostString, destination: &[u8]) -> result: unit reads(text), writes(destination) contract {
+fn main(text: &std::text::HostString, destination: &[u8]) -> result: unit reads(text), writes(destination) contract {
   requires 3_u64 <= deref(destination).len;
 } {
-  match host_copy_bytes(value: text, destination: destination, start: 0_u64, end: 3_u64) {
+  match std::text::host_copy_bytes(value: text, destination: destination, start: 0_u64, end: 3_u64) {
     Ok(value: copied) => {
       let good = table[copied];
     }
@@ -8359,10 +8359,10 @@ fn a_host_copy_utf8_success_endpoint_is_bounded_by_end() {
     // the byte-preserving copy producer: copied <= 3 < table.len.
     let source = br#"const table: Array<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-fn main(text: &HostString, destination: &[u8]) -> result: unit reads(text), writes(destination) contract {
+fn main(text: &std::text::HostString, destination: &[u8]) -> result: unit reads(text), writes(destination) contract {
   requires 3_u64 <= deref(destination).len;
 } {
-  match host_copy_utf8(value: text, destination: destination, start: 0_u64, end: 3_u64) {
+  match std::text::host_copy_utf8(value: text, destination: destination, start: 0_u64, end: 3_u64) {
     Ok(value: copied) => {
       let good = table[copied];
     }
@@ -8392,11 +8392,11 @@ fn a_named_boundary_outcome_uses_the_same_numeric_evidence_as_source_calls() {
 
 const table: Array<u8, count> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-fn deferred(factory: &HandleFactory, output: &OutputStream, source: &[u8], limit: u64) -> result: unit reads(source), writes(factory), writes(output) contract {
+fn deferred(factory: &std::io::HandleFactory, output: &std::io::OutputStream, source: &[u8], limit: u64) -> result: unit reads(source), writes(factory), writes(output) contract {
   define capacity = deref(source).len;
   requires 3_u64 <= capacity;
 } {
-  let outcome = write_once(factory: factory, output: output, source: source, start: 0_u64, end: 3_u64);
+  let outcome = std::io::write_once(factory: factory, output: output, source: source, start: 0_u64, end: 3_u64);
   match outcome {
     Ok(value: written) => {
       let sample = table[written];
@@ -8407,11 +8407,11 @@ fn deferred(factory: &HandleFactory, output: &OutputStream, source: &[u8], limit
   return unit;
 }
 
-fn killed(factory: &HandleFactory, output: &OutputStream, source: &[u8], limit: u64) -> result: unit reads(source), writes(factory), writes(output) contract {
+fn killed(factory: &std::io::HandleFactory, output: &std::io::OutputStream, source: &[u8], limit: u64) -> result: unit reads(source), writes(factory), writes(output) contract {
   define capacity = deref(source).len;
   requires limit <= capacity;
 } {
-  let outcome = write_once(factory: factory, output: output, source: source, start: 0_u64, end: limit);
+  let outcome = std::io::write_once(factory: factory, output: output, source: source, start: 0_u64, end: limit);
   set limit = 9_u64;
   match outcome {
     Ok(value: written) => {
@@ -8448,10 +8448,10 @@ fn a_read_at_endpoint_is_observed_on_its_own_outcome_variant() {
     // PRE-1 read_at uses Result and an ordinary selected ensures.
     let source = br#"const table: Array<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-fn main(factory: &HandleFactory, file: &ReadFile, destination: &[u8]) -> result: unit writes(factory), writes(file), writes(destination) contract {
+fn main(factory: &std::io::HandleFactory, file: &std::fs::ReadFile, destination: &[u8]) -> result: unit writes(factory), writes(file), writes(destination) contract {
   requires 3_u64 <= deref(destination).len;
 } {
-  match read_at(factory: factory, file: file, destination: destination, file_offset: 0_u64, start: 0_u64, end: 3_u64) {
+  match std::fs::read_at(factory: factory, file: file, destination: destination, file_offset: 0_u64, start: 0_u64, end: 3_u64) {
     Ok(value: next) => {
       let sample = table[next];
     }
@@ -8492,8 +8492,8 @@ fn caller() -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -8529,8 +8529,8 @@ fn read(leave: Bool) -> result: i32 pure {
   return values[0_u64];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -8560,8 +8560,8 @@ fn an_undischarged_subscript_is_an_op4_rejection_with_the_exact_residual() {
   return values[i];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     // Both terms are parameters no event of `read` writes, so the repair
@@ -8590,8 +8590,8 @@ fn read() -> result: i32 pure {
   return values[2_u64];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -8616,8 +8616,8 @@ fn read() -> result: i32 pure {
   return values[2_u64];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -8651,8 +8651,8 @@ fn read() -> result: i32 pure {
   return total;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -8983,7 +8983,7 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
         }));
     }
 
-    // PRE-1 supplies ordinary signatures: write_once and read_at each publish
+    // PRE-2 supplies ordinary signatures: write_once and read_at each publish
     // their two endpoint clauses through the same conditional call route.
     // The fourteen read_bits calls retain their original clause inventory.
     for (caller_name, callee_name) in [("publish_all", "write_once"), ("exercise", "read_at")] {
@@ -9431,8 +9431,8 @@ fn probe(holder: Holder) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "probe");
@@ -9471,8 +9471,8 @@ fn probe(limit: Limit) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -9495,8 +9495,8 @@ fn counted_range_preserves_multiple_box_content_steps_in_one_endpoint_term() {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "probe");
@@ -9522,8 +9522,8 @@ fn counted_range_keeps_nested_box_steps_without_a_reference_wrapper_step() {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "probe");
@@ -9547,8 +9547,8 @@ fn counted_range_does_not_treat_a_read_only_box_content_read_as_a_consume() {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "probe");
@@ -9573,8 +9573,8 @@ fn counted_range_does_not_duplicate_the_content_step_of_a_let_bound_owning_box()
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "probe");
@@ -9607,8 +9607,8 @@ fn caller(value: u8) -> result: u8 pure {
   return shift_once(value: value);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -9664,8 +9664,8 @@ fn impossible_integer_domain_true_edge_closes_to_contradiction() {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -9710,8 +9710,8 @@ fn impossible_integer_domain_false_edge_closes_to_contradiction() {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -9805,8 +9805,8 @@ fn from_false(value: u64) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
 
@@ -9857,8 +9857,8 @@ fn projected(value: u64) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let exact = entailment(source, "exact");
@@ -9936,8 +9936,8 @@ fn one(value: u64, choose: Bool) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let both = entailment(source, "both");
@@ -9985,8 +9985,8 @@ fn probe(value: u64) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let outcomes = call_goals(source, "probe");
@@ -10025,8 +10025,8 @@ fn caller() -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "caller");
@@ -10063,8 +10063,8 @@ fn caller(value: u64) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let outcomes = call_goals(source, "caller");
@@ -10112,8 +10112,8 @@ fn through_call(first: Bool, second: Bool) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     for function in ["through_holder", "through_call"] {
@@ -10166,8 +10166,8 @@ fn l0(value: u64) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     for (function, is_goal) in [("signed", true), ("l0", false)] {
@@ -10223,8 +10223,8 @@ fn caller(slot: i32) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = accepted_entailment(source, "caller");
@@ -10269,8 +10269,8 @@ fn caller(slot: i32, replacement: i32) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = accepted_entailment(source, "caller");
@@ -10310,8 +10310,8 @@ fn caller(value: u64) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -10348,8 +10348,8 @@ fn caller(value: u64) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -10428,8 +10428,8 @@ fn caller() -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(admitted_actual, |outcome| {
@@ -10494,8 +10494,8 @@ fn caller() -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(failed_actual, |outcome| {
@@ -10540,8 +10540,8 @@ fn caller(value: u64) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "caller");
@@ -10585,8 +10585,8 @@ fn update(value: &u64) -> result: unit writes(value) contract {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "update");
@@ -10661,8 +10661,8 @@ fn caller(values: Slots<u8, 2>) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let outcomes = call_goals(source, "caller");
@@ -10707,8 +10707,8 @@ fn probe() -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let outcomes = call_goals(source, "probe");
@@ -10733,8 +10733,8 @@ fn second(value: u64) -> result: unit pure contract {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     for function in ["first", "second"] {
@@ -10758,8 +10758,8 @@ fn main() -> status: ExitStatus pure {
 
 #[test]
 fn a_forward_concrete_generic_call_uses_its_substituted_goal() {
-    let source = br#"fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+    let source = br#"fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 
 fn caller(value: i32) -> result: unit pure {
@@ -10808,7 +10808,7 @@ fn concrete_const_instances_keep_function_local_derivation_inventories() {
   return values[0_u64];
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let small = slots_new::<u8, 2>();
   place_back(window: &small, value: 7_u8);
   place_back(window: &small, value: 7_u8);
@@ -10820,7 +10820,7 @@ fn main() -> status: ExitStatus pure {
   place_back(window: &large, value: 9_u8);
   place_back(window: &large, value: 9_u8);
   let large_first = first::<5>(values: move large);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics_dark(source, |outcome| {
@@ -10899,8 +10899,8 @@ fn a_write_still_kills_an_established_bound_on_its_target() {
   return b[offset];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     // `offset` is a local the body writes, so no requirement names it and

@@ -1,3 +1,6 @@
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
 enum Held {
   Full(code: u8, cell: Box<u8>);
   Empty();
