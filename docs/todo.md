@@ -310,27 +310,16 @@ rarely insert at the same place.
   blocks a program or an experiment, and close when that comparison is made
   and the owner rules on it.
 
-- **The checker/engine acceptance contract is written nowhere.**
-  `entailment_rejection` (`compiler/src/semantic/check.rs`, 567 lines) decides
-  acceptance by listing the engine's outcome lists by hand, maps obligation
-  families to rules twice and selects OP-14 by the callee spelling
-  `free_empty`. A mandatory outcome list added without a matching arm would be
-  accepted. The [architecture investigation](../research/investigations/compiler-architecture/DESIGN.md#f2-rules-implemented-twice-with-nothing-checking-that-they-agree)
-  proposes explicit obligation records, one disposition each and one
-  acceptance query (its P1.3), which `design/compiler/acceptance-records.md`
-  now records. Validate with identical verdicts, rules and locations on the
-  conformance corpus and test programs, and a deliberately dropped
-  disposition that rejects. Close when acceptance is one query over the
-  records.
-
-- **Rules recognized by spelling or implemented twice.** OP-14 is selected
-  by the callee spelling `free_empty` (`compiler/src/semantic/check.rs`) and
-  the backend recognizes OP-11's row by symbol spelling
-  (`compiler/src/backend/emitter.rs`); both hold only because TYPE-6 rejects a
-  source declaration that collides with the prelude. CALL-6's consistency
-  check keeps its own closure (`compiler/src/semantic/check/publication.rs`)
-  beside the ENT-4 closure the specification names, and INV-1 affine formation
-  and call-goal images are each formed in both the checker and the flow.
+- **Rules recognized by spelling or implemented twice.** The checker's
+  operand-row table (`compiler/src/semantic/check/generics/operands.rs`)
+  recognizes the OP-10, OP-11 and OP-14 rows by their prelude spelling, and
+  an OP-14 record takes its rule from it; the backend recognizes OP-11's row
+  by symbol spelling (`compiler/src/backend/emitter.rs`). Both hold only
+  because TYPE-6 rejects a source declaration that collides with the
+  prelude. CALL-6's consistency check keeps its own closure
+  (`compiler/src/semantic/check/publication.rs`) beside the ENT-4 closure the
+  specification names, and INV-1 affine formation and call-goal images are
+  each formed in both the checker and the flow.
   Select by PRE-1 operation identity, route CALL-6 through an isolated
   ordinary query, and form each image once. Validate with identical verdicts
   and a prelude-spelled source declaration that still reaches neither path.
@@ -1230,23 +1219,6 @@ rarely insert at the same place.
   and a diff of moved items and module declarations only. Split when no open
   branch has large edits in these files, or one section at a time; close when
   every file named here is under 4,000 lines.
-
-- **The checker's program pass shares one file with its signature and goal
-  code.** `compiler/src/semantic/check.rs` has 4,349 lines, 3,597 of them in
-  one `impl Checker` block; the modular compilation work added about 600
-  (module inventories, supplied function actuals, receipt wiring). `check/`
-  already holds sibling `impl Checker` files, so the split moves methods, not
-  types: the program pass (`check_program`, `analyze_function_inventory`,
-  `function_actual_ids`) into `check/program.rs`, the signature and effect-row
-  checks (`check_function_signature_body`, `effect_row_difference`,
-  `render_effect_path`) into `check/signatures.rs`, and goal instantiation
-  (`instantiate_goal_expression`, `instantiate_goal_operation`,
-  `install_expression_call_requirements`) into `check/goals.rs`. Validate that
-  each move changes no behavior: identical `make check` results and a diff of
-  moved items and module declarations only. Close when the file is under 4,000
-  lines. The moves keep the one 49-field `Checker`; separating its state into
-  a type context, a declaration inventory and a per-attempt body checker is
-  the [architecture investigation](../research/investigations/compiler-architecture/DESIGN.md#p2-component-boundaries)'s P2.2.
 
 - **LLVM emission writes and then patches text.**
   `compiler/src/backend/emitter.rs` inserts entry allocas by byte offset and

@@ -1003,7 +1003,7 @@ fn analyze_candidate_inner(
     context: &EntailmentContext<'_>,
 ) -> FunctionEntailment {
     let run = run(function, context);
-    FunctionEntailment {
+    let mut entailment = FunctionEntailment {
         body_disposition: run.body_disposition,
         obligations: run.obligations,
         call_goals: run.call_goals,
@@ -1016,9 +1016,13 @@ fn analyze_candidate_inner(
         postconditions: run.postconditions,
         boolean_decompositions: run.boolean_decompositions,
         permission_separations: run.permission_separations,
+        answers: Vec::new(),
+        unrecorded: Vec::new(),
         derivations: run.derivations,
         inventory: run.inventory,
-    }
+    };
+    (entailment.answers, entailment.unrecorded) = super::answer_records(function, &entailment);
+    entailment
 }
 
 struct AnalysisRun {
@@ -17183,6 +17187,7 @@ mod indexed_goal_kill_tests {
             allocates: false,
             call_separations: Vec::new(),
             permission_separation_queries: Vec::new(),
+            obligations: Vec::new(),
             entailment: FunctionEntailment::default(),
         };
         let mut analyzer = Analyzer::new(&context, &function);
@@ -17390,6 +17395,7 @@ mod range_argument_kill_tests {
             allocates: false,
             call_separations: Vec::new(),
             permission_separation_queries: Vec::new(),
+            obligations: Vec::new(),
             entailment: FunctionEntailment::default(),
         };
         let mut analyzer = Analyzer::new(&context, &function);

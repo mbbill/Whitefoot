@@ -3,11 +3,11 @@
 //! signed goals.
 //!
 //! The engine is acceptance-bearing: [`analyze_function`] computes the
-//! closed fact state along the [FN-1] structural graph, the [ENT-6]
-//! disposition of every bounds obligation, the [FN-8] disposition of every
-//! ordinary call requirement. The checker rejects a function whose summary
-//! contains an undischarged obligation or call goal and retains the complete
-//! summary on the checked function [DIAG-2].
+//! closed fact state along the [FN-1] structural graph and judges every
+//! obligation it reaches, and [`answer_records`] answers each obligation
+//! record the checker formed with the judgment that decided it. The checker
+//! accepts a function exactly when every record is answered and discharged,
+//! and retains the complete summary on the checked function [DIAG-2].
 //!
 //! Judgments are per function body [ENT-2]; the [ENT-3] S4 `requires`
 //! relation is the one fact that enters from outside the body, and no fact
@@ -55,6 +55,7 @@ use super::model::{
     CheckedIntegerOperation, CheckedLoopId, CheckedMode, CheckedNominal, CheckedSetTarget,
     CheckedStatement, CheckedType, FunctionId, IntegerType,
 };
+use super::obligations::{ObligationSubject, RecordAnswer};
 use super::postcondition::CheckedPostcondition;
 use crate::{DeclarationId, NodePath};
 
@@ -274,7 +275,7 @@ impl EntailmentContext<'_> {
 }
 
 /// The [ENT-6] obligation family one outcome belongs to.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum ObligationFamily {
     /// A subscript bounds obligation `i < P.len` [OP-4, WIN-1].
     Bounds,
@@ -1157,11 +1158,137 @@ pub(crate) struct FunctionEntailment {
     /// statement pair and captured ranges whose first-point state proved
     /// them. Absence or an undischarged entry retains sequential lowering.
     pub(crate) permission_separations: Vec<super::permission::PermissionSeparationProof>,
+    /// One answer per obligation record of the analyzed function, in the
+    /// records' order; `None` where no judgment decided the record.
+    pub(crate) answers: Vec<Option<RecordAnswer>>,
+    /// The sites of judgments that answer no record. The checker and the
+    /// engine then disagree about the function's obligations, and it is not
+    /// accepted.
+    pub(crate) unrecorded: Vec<NodePath>,
     /// Function-local, lifetime-bound derivations for mandatory DIAG-2 roots.
     pub(crate) derivations: DerivationLedger,
     /// Canonical term and goal identities moved from the analyzer so every
     /// retained dense ID remains exact and interpretable after analysis.
     pub(crate) inventory: DerivationInventory,
+}
+
+/// Answers each obligation record of `function` with the judgment that
+/// decided it (`design/compiler/acceptance-records.md`).
+///
+/// A judgment answers the record formed at its own site for its own subject,
+/// and at most one record. A record no judgment matches stays unanswered; a
+/// judgment no record matches is returned by its site. Either way the
+/// function's obligations and the engine's judgments disagree, which
+/// acceptance refuses.
+pub(crate) fn answer_records(
+    function: &CheckedFunction,
+    entailment: &FunctionEntailment,
+) -> (Vec<Option<RecordAnswer>>, Vec<NodePath>) {
+    let mut unrecorded = Vec::new();
+    let mut obligations = judgments_by(
+        entailment.obligations.iter().map(|outcome| {
+            (
+                (&outcome.node_path, outcome.family, outcome.conjunct),
+                &outcome.node_path,
+            )
+        }),
+        &mut unrecorded,
+    );
+    let mut call_goals = judgments_by(
+        entailment.call_goals.iter().map(|outcome| {
+            (
+                (&outcome.node_path, &outcome.requires_clause),
+                &outcome.node_path,
+            )
+        }),
+        &mut unrecorded,
+    );
+    let mut loop_invariants = judgments_by(
+        entailment
+            .loop_invariants
+            .iter()
+            .map(|outcome| (&outcome.node_path, &outcome.node_path)),
+        &mut unrecorded,
+    );
+    let mut source_proofs = judgments_by(
+        entailment
+            .source_proofs
+            .iter()
+            .map(|outcome| (&outcome.node_path, &outcome.node_path)),
+        &mut unrecorded,
+    );
+    // [PRE-1] the relations of a signature without a body are declaration
+    // premises the analysis publishes, never obligations a record asks for.
+    let mut postconditions = judgments_by(
+        entailment
+            .postconditions
+            .iter()
+            .filter(|_| function.body.is_some())
+            .map(|proof| ((&proof.selector, proof.relation_ordinal), &proof.selector)),
+        &mut unrecorded,
+    );
+    let uninhabited = matches!(
+        entailment.body_disposition,
+        super::model::CheckedBodyDisposition::Uninhabited { .. }
+    );
+    let answers = function
+        .obligations
+        .iter()
+        .map(|record| {
+            let site = &record.site;
+            match &record.subject {
+                ObligationSubject::Source { family, conjunct } => obligations
+                    .remove(&(site, *family, *conjunct))
+                    .map(|(index, _)| RecordAnswer::Obligation(index)),
+                ObligationSubject::CallRequirement {
+                    requires_clause, ..
+                } => call_goals
+                    .remove(&(site, requires_clause))
+                    .map(|(index, _)| RecordAnswer::CallGoal(index)),
+                ObligationSubject::LoopInvariant => loop_invariants
+                    .remove(site)
+                    .map(|(index, _)| RecordAnswer::LoopInvariant(index)),
+                ObligationSubject::SourceProof => source_proofs
+                    .remove(site)
+                    .map(|(index, _)| RecordAnswer::SourceProof(index)),
+                // [FN-9] a relation of a body whose requirements contradict
+                // holds at every exit, since none is reachable.
+                ObligationSubject::Postcondition { .. } if uninhabited => {
+                    Some(RecordAnswer::Uninhabited)
+                }
+                ObligationSubject::Postcondition { relation_ordinal } => postconditions
+                    .remove(&(site, *relation_ordinal))
+                    .map(|(index, _)| RecordAnswer::Postcondition(index)),
+            }
+        })
+        .collect();
+    unrecorded.extend(
+        obligations
+            .into_values()
+            .chain(call_goals.into_values())
+            .chain(loop_invariants.into_values())
+            .chain(source_proofs.into_values())
+            .chain(postconditions.into_values())
+            .map(|(_, site)| site.clone()),
+    );
+    unrecorded.sort_by(|left, right| left.components().cmp(right.components()));
+    (answers, unrecorded)
+}
+
+/// Indexes one kind's judgments by the identity a record names them by,
+/// keeping each judgment's site. A judgment whose identity repeats another's
+/// can answer no record of its own, so its site joins `unrecorded`.
+fn judgments_by<'judgment, Key: Eq + std::hash::Hash>(
+    judgments: impl Iterator<Item = (Key, &'judgment NodePath)>,
+    unrecorded: &mut Vec<NodePath>,
+) -> HashMap<Key, (usize, &'judgment NodePath)> {
+    let mut indexed = HashMap::new();
+    for (index, (key, site)) in judgments.enumerate() {
+        if let Some((_, displaced)) = indexed.insert(key, (index, site)) {
+            unrecorded.push(displaced.clone());
+        }
+    }
+    indexed
 }
 
 /// Computes the combined entailment analysis of one checked function body.

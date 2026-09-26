@@ -2719,6 +2719,10 @@ pub(crate) struct CheckedFunction {
     /// Finite optional [PAR-1] range questions planned from the complete
     /// structural footprints before entailment walks their first statements.
     pub(crate) permission_separation_queries: Vec<super::permission::PermissionSeparationQuery>,
+    /// Every mandatory obligation of the completed function, which the
+    /// analysis answers one by one and acceptance requires discharged.
+    /// Formed once the call requirements are installed; empty before.
+    pub(crate) obligations: Vec<super::obligations::ObligationRecord>,
     /// Retained [ENT] analysis summary [DIAG-2]. Semantic acceptance and
     /// diagnostics read it; lowering deliberately does not.
     #[allow(dead_code)]

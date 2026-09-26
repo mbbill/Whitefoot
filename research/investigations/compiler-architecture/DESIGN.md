@@ -340,6 +340,23 @@ and applied (`design/log.md`, 2026-09-25).
    which can stay alongside the dispositions to spare them. Validation:
    identical verdicts, rules and locations on the corpus. Tree: a new
    decision, `design/compiler/acceptance-records.md` (owner-approved).
+   Done on the follow-up branch. The checker forms the records in one walk
+   over each completed function (`semantic/check/obligations.rs`), exhaustive
+   over every statement, expression and place form, once call requirements
+   are installed, rather than at each admission site: the walk sees only the
+   final attempt's body and cannot miss a form without failing to compile,
+   and it is independent of the engine's walk and reachability. The records
+   carry the rule, fixed once; OP-14 comes from the checker's operand-row
+   table, not the callee spelling. The engine answers each record by its
+   site, family and conjunct (`answer_records`); no key repeated on the
+   corpus. Acceptance (`semantic/check/acceptance.rs`) reports the first
+   undischarged answered record in the former order, and treats unanswered
+   records alone, or a judgment that answers none, as a compiler failure,
+   since they mean the checker and the engine disagree and are no source
+   rejection. The corpus and the module graphs emit identical LLVM,
+   diagnostics and exit codes. With the engine's place-subscript judgment
+   disabled, 54 programs the unchanged compiler rejects fail closed instead,
+   where the former acceptance, given the same engine, accepted 43 of them.
 
 ### P2. Component boundaries
 
