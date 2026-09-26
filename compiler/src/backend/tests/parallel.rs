@@ -1529,6 +1529,18 @@ fn without_clones(module: &str) -> String {
     kept
 }
 
+/// The definition that carries `symbol`'s emitted body: its own definition,
+/// or, for a result returned in registers, the internal destination-form
+/// body its public entry calls (compiler/src/backend/abi.rs).
+fn emitted_body_definition<'module>(module: &'module str, symbol: &str) -> &'module str {
+    let body = format!("{symbol}.body");
+    if module.contains(&format!("{body}(")) {
+        function_body(module, &body)
+    } else {
+        function_body(module, symbol)
+    }
+}
+
 /// The text of one emitted function definition, from its `define` line to its
 /// closing brace.
 pub(super) fn function_body<'module>(module: &'module str, symbol: &str) -> &'module str {
@@ -1561,8 +1573,12 @@ fn an_interposed_builtin_retains_the_outlined_call_and_join() {
     assert!(fold.contains(", ptr @wf__par_thunk_"));
 }
 
-// Stored results need independent caller destinations after lane retirement;
+// Stored results need independent caller storage after lane retirement;
 // scalar and descriptor-returning fixtures do not exercise that adapter.
+// This two-leaf Pair returns in registers: the thunk stores the returned
+// value into the lane frame, and the join copies it out before release.
+// `owning_enum_windows_survive_lane_arguments_results_and_refusal` keeps a
+// result too large for the registers on the destination adapter.
 const OWNED_PAIR_RESULTS: &[u8] = br#"struct Pair {
   left: u64;
   right: u64;
@@ -1605,7 +1621,24 @@ fn owned_pair_results_survive_ordinary_join_and_forced_refusal() {
     assert!(main.contains("call void @wf__par_join(ptr "));
     assert!(main.contains("\npar.inline."));
     let make = function_body(&module, "@wf_make");
-    assert!(make.starts_with("define void @wf_make(ptr "));
+    let (result, _) = make
+        .strip_prefix("define ")
+        .and_then(|header| header.split_once(" @wf_make(i64 %v0)"))
+        .expect("make takes only its seed");
+    assert!(module.contains(&format!("{result} = type {{ i64, i64 }}")));
+    // The published thunk and the refused edge call the same by-value ABI;
+    // both edges join as one value that enters the caller's own storage.
+    // A thunk is named for the function that hands it out and numbered
+    // among that function's own [MOD-8]: `main`'s first.
+    let thunk = function_body(&module, "@wf__par_thunk_main.0");
+    assert!(
+        main.contains(", ptr @wf__par_thunk_main.0)"),
+        "the call is handed out through this thunk: {main}"
+    );
+    assert!(thunk.contains(&format!("%result = call {result} @wf_make(i64 %a0)")));
+    assert!(thunk.contains(&format!("store {result} %result, ptr %slot")));
+    assert!(main.contains(&format!(" = call {result} @wf_make(i64 ")));
+    assert!(main.contains(&format!(" = phi {result} [ ")));
     run_owned_lane_cases(OWNED_PAIR_RESULTS, &module, 0, 1, 0, 0, 1);
 }
 
@@ -2356,14 +2389,18 @@ fn main() -> status: std::process::ExitStatus pure {{
                     );
                     continue; // Equality retains the emission check; its image already ran.
                 }
-                let entry = function_body(&module, "@wf_fold");
+                // `Answer` returns in registers, so each of these definitions
+                // is a public entry over an internal destination-form body
+                // that holds the calls and the cut (compiler/src/backend/abi.rs).
+                let entry = emitted_body_definition(&module, "@wf_fold");
                 let target = if mutual { "alternate" } else { "fold" };
                 assert_eq!(module.contains("@wf__par_budget_fold("), family);
                 if family {
                     // The entry keeps the writer's own signature and result
                     // ABI: what it adds is the budget it enters the family
                     // with, asked of the runtime unless it was pinned.
-                    let variant = function_body(&module, &format!("@wf__par_budget_{target}"));
+                    let variant =
+                        emitted_body_definition(&module, &format!("@wf__par_budget_{target}"));
                     assert!(entry.contains("@wf__par_budget_fold("), "{entry}");
                     assert!(!entry.contains("@wf__par_acquire_lane("), "{entry}");
                     assert_eq!(
@@ -2379,7 +2416,7 @@ fn main() -> status: std::process::ExitStatus pure {{
                         "{variant}"
                     );
                     assert_eq!(
-                        function_body(&module, "@wf__par_budget_fold")
+                        emitted_body_definition(&module, "@wf__par_budget_fold")
                             .matches(&format!("@wf__par_seq_{target}("))
                             .count(),
                         usize::from(!mutual) + usize::from(sequential)
@@ -2392,7 +2429,8 @@ fn main() -> status: std::process::ExitStatus pure {{
                 }
 
                 assert!(
-                    !function_body(&module, "@wf__par_seq_fold").contains("@wf__par_acquire_lane(")
+                    !emitted_body_definition(&module, "@wf__par_seq_fold")
+                        .contains("@wf__par_acquire_lane(")
                 );
                 let mut observed = module
                     .replace(

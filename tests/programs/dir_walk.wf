@@ -233,11 +233,6 @@ fn walk(factory: &HandleFactory, dir: &DirectoryRead, prefix: &[u8], prefix_leng
           } else {
             break @stored_entry;
           }
-          let ordered = name_at <= name_end;
-          if ordered {
-          } else {
-            break @stored_entry;
-          }
           let addressable = name_end <= entries_room;
           if addressable {
           } else {
@@ -334,20 +329,8 @@ fn walk(factory: &HandleFactory, dir: &DirectoryRead, prefix: &[u8], prefix_leng
               }
               let room_left = total < 64_u64;
               if room_left {
-                let stored = if cursor <= 126_u64 {
-                  give cursor;
-                } else {
-                  give 126_u64;
-                }
-                let narrowed = cvt.checked::<u64, u8>(stored);
-                let byte_length = match narrowed {
-                  Ok(value: exact) => {
-                    give exact;
-                  }
-                  Err(error: failure) => {
-                    give 0_u8;
-                  }
-                }
+                let stored = imin(cursor, 126_u64);
+                let byte_length = cvt::<u64, u8>(stored);
                 let start = deref(records).len;
                 let record_fits = start <= 8064_u64;
                 if record_fits {

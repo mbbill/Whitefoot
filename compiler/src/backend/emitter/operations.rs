@@ -158,7 +158,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             llvm_type(self.program, ty)?,
             rendered.join(", ")
         )
-        .map_err(|_| BackendFailure::TextEmission)
+        .map_err(|_| BackendFailure::TextEmission)?;
+        // A stored aggregate returned in registers enters the storage the
+        // plan selected for it. A scalar result has no storage.
+        self.save_value_result(result)
     }
 
     /// One by-value operand as its callee's parameter receives it.

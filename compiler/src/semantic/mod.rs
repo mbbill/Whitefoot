@@ -524,8 +524,9 @@ pub struct UndischargedCallRequirementDetail {
     pub instantiated_goal: String,
     /// The exact non-discharged disposition.
     pub disposition: CallRequirementDisposition,
-    /// The rule-selected mechanical restructuring.
-    pub mechanical_fix: &'static str,
+    /// The repair [DIAG-1], selected by the disposition and by what the
+    /// goal's terms are.
+    pub mechanical_fix: String,
 }
 
 /// One non-discharged [FN-9] relation disposition.
@@ -551,6 +552,8 @@ pub struct UndischargedPostconditionDetail {
     pub relation: String,
     /// The exact non-discharged disposition.
     pub disposition: PostconditionProofDisposition,
+    /// The repair [DIAG-1], selected by the disposition.
+    pub mechanical_fix: &'static str,
 }
 
 /// Structured reason for one semantic rejection.
@@ -606,6 +609,22 @@ pub enum SemanticIssueKind {
         expected: String,
         /// The exact type, mode, or written form found there.
         found: String,
+    },
+    /// [OP-10, OP-14] an operand whose shape is outside the operation's
+    /// admitted set.
+    UnadmittedOperandShape {
+        /// The shapes the operation admits.
+        expected: &'static str,
+        /// The repair [DIAG-1].
+        mechanical_fix: &'static str,
+    },
+    /// [FN-4] a supplied function whose signature, row or contract does not
+    /// match the formal interface it is bound to.
+    BehaviorArgumentMismatch {
+        /// The part of the formal interface the supplied function misses.
+        expected: String,
+        /// The repair [DIAG-1].
+        mechanical_fix: &'static str,
     },
     /// A constant was selected as an assignment target.
     ImmutableSetTarget,
@@ -757,14 +776,14 @@ pub enum SemanticIssueKind {
         /// Exact mechanical repair required by OWN-1.
         mechanical_fix: &'static str,
     },
-    /// [BLK-1] a `construct` named one of the four compiler-owned container or
-    /// provider nominals. No construct produces a run, a provider, or a
-    /// store: each contributes a constructor entry that exists to be refused.
+    /// [TYPE-2] a constructor `call` or a destructuring `let_stmt` named an
+    /// opaque struct, whose constructor entry exists to be refused.
     ContainerConstruction {
         /// The nominal the construct named.
         nominal: String,
-        /// Exact restructuring required by BLK-1.
-        mechanical_fix: &'static str,
+        /// The repair [DIAG-1], chosen by where the struct comes from and,
+        /// for a cell taken apart, by its content.
+        mechanical_fix: String,
     },
     /// A binding was used after ownership had already been consumed.
     UseAfterMove {
@@ -839,19 +858,24 @@ pub enum SemanticIssueKind {
     /// A subscript's bounds obligation is not derivable from the closed fact
     /// state at its node [OP-4, ENT-6].
     UndischargedBoundsObligation {
-        /// The exact ENT-6 residual rendering: offset atom, ` < len_of(`, base
-        /// place, `)`.
+        /// The exact ENT-6 residual rendering: offset atom, ` < `, base
+        /// place, `.len`.
         residual: String,
-        /// The mechanical fix ENT-6 names.
-        mechanical_fix: &'static str,
+        /// The exact non-discharged disposition [MSR-4].
+        disposition: StaticObligationDisposition,
+        /// The repair [DIAG-1], selected by the disposition and by what the
+        /// residual's terms are.
+        mechanical_fix: String,
     },
     /// A release selected the empty-run graph but the current facts do not
     /// prove that the run has no initialized elements [PROV-6, ENT-6].
     UndischargedEmptyRunRelease {
         /// The exact remaining relation, `len_of(P) <= 0_u64`.
         residual: String,
-        /// The source-level way to establish or avoid the obligation.
-        mechanical_fix: &'static str,
+        /// The exact non-discharged disposition [OP-14].
+        disposition: StaticObligationDisposition,
+        /// The repair [DIAG-1], selected by the disposition.
+        mechanical_fix: String,
     },
     /// One proof-required exact integer operation's canonical `.defined`
     /// goal is not derivable from the closed fact state [OP-2, ENT-6].
@@ -860,25 +884,28 @@ pub enum SemanticIssueKind {
         residual: String,
         /// The exact non-discharged disposition.
         disposition: StaticObligationDisposition,
-        /// The mechanical fix OP-2 names.
-        mechanical_fix: &'static str,
+        /// The repair [DIAG-1], selected by the disposition and by what the
+        /// goal's terms are.
+        mechanical_fix: String,
     },
     /// One exact numeric conversion lacks its OP-6 domain proof.
     UndischargedConversionDomainObligation {
         residual: String,
         disposition: StaticObligationDisposition,
-        mechanical_fix: &'static str,
+        mechanical_fix: String,
     },
     /// A runtime-sized buffer allocation lacks an OP-9 fit proof.
     UndischargedAllocationFitObligation {
         residual: String,
-        mechanical_fix: &'static str,
+        disposition: StaticObligationDisposition,
+        mechanical_fix: String,
     },
     /// One range-reference formation conjunct — `lo <= hi` or `hi <= x.len`
     /// — lacks a [REF-4] proof.
     UndischargedRangeFormationObligation {
         residual: String,
-        mechanical_fix: &'static str,
+        disposition: StaticObligationDisposition,
+        mechanical_fix: String,
     },
     /// Two compared index or range steps have no source proof of disjointness
     /// [OWN-7, EFF-5]. The residual names the exact position family.
@@ -936,16 +963,20 @@ pub enum SemanticIssueKind {
         /// establish. A counted-loop backedge renders the hidden next binder
         /// as `i + 1_u64`; no checker-private term identity is exposed.
         required_relation: String,
-        /// Exact source-level repair selected by INV-1.
-        mechanical_fix: &'static str,
+        /// The failed judgment's disposition [MSR-4].
+        disposition: StaticObligationDisposition,
+        /// The repair [DIAG-1], selected by the obligation and disposition.
+        mechanical_fix: String,
     },
     /// A well-formed blockless local invariant target is not established by
     /// the specification-defined AUTO family in its entering context.
     UndischargedLocalInvariant {
         /// Source spelling of the invariant name.
         name: String,
-        /// Exact source-level repair selected by INV-1.
-        mechanical_fix: &'static str,
+        /// The target's disposition [MSR-4].
+        disposition: StaticObligationDisposition,
+        /// The repair [DIAG-1], selected by the disposition.
+        mechanical_fix: String,
     },
     /// A `proof_use` relation or certificate factor violates the closed
     /// PRF-1 source form.
@@ -990,7 +1021,11 @@ pub enum SemanticIssueKind {
     InvalidPostconditionSelector,
     /// [CALL-4] a route omits its ordinal binder where two or more declared
     /// result ordinals could carry it.
-    AmbiguousResultRoute,
+    AmbiguousResultRoute {
+        /// The repair [DIAG-1], naming the results that could carry the
+        /// route.
+        mechanical_fix: String,
+    },
     /// A variant selector does not spell exact `Ok(value: result)`.
     InvalidPostconditionFields {
         /// Exact closed field list required by the admitted selector.
@@ -1035,6 +1070,8 @@ pub enum SemanticIssueKind {
     NoSelectedNormalExit {
         /// The exact fixed residual required by FN-9.
         residual: &'static str,
+        /// The repair [DIAG-1].
+        mechanical_fix: &'static str,
     },
     /// A selected normal return's complete instantiated FN-9 relation is
     /// refuted or unproved after entry-image stability and ordinary kills.
@@ -1076,6 +1113,15 @@ pub enum SemanticIssueKind {
     InvalidPropagation,
     /// `give` is absent, misplaced, duplicated, or followed by a statement.
     InvalidGive,
+    /// [GIVE-1] every arm or branch of a value initializer leaves by `return`
+    /// or `break`, so its delivery set is empty and no value reaches the
+    /// binding.
+    EmptyDeliverySet {
+        /// The binding no value reaches, as the source spells it.
+        binding: String,
+        /// The repair [DIAG-1]: the statement form, binding dropped.
+        mechanical_fix: String,
+    },
     /// The effect row is not a valid exact EFF-1 row.
     InvalidEffectRow {
         /// Which EFF-1 condition this row failed.
@@ -1083,19 +1129,23 @@ pub enum SemanticIssueKind {
         /// Exact repair required by EFF-1 for that condition.
         mechanical_fix: &'static str,
     },
-    /// A row carries `reads(p)` beside `writes(p)` for one path, which
-    /// EFF-1 never writes because `writes(p)` subsumes `reads(p)`. EFF-1
-    /// names no restructuring for it, so the rejection carries none.
-    SubsumedEffectRead {
-        /// The redundant `reads` entry as the row writes it.
+    /// A row carries an entry that another of its entries covers, such as
+    /// `reads(p)` or `writes(p.x)` beside `writes(p)`, or `reads(p.x)` beside
+    /// `reads(p)`, which EFF-1 never writes because the covering entry
+    /// already states it. EFF-1 names no restructuring for it, so the
+    /// rejection carries none.
+    SubsumedEffectEntry {
+        /// The redundant entry as the row writes it.
         entry: String,
+        /// The first entry in written order whose path covers it: a `writes`
+        /// entry, or a `reads` entry covering a `reads` entry below it.
+        covering: String,
     },
     /// The written effect row differs from syntactically exhibited effects.
     EffectMismatch {
-        /// A row EFF-2 admits for the body, in EFF-1 canonical spelling, that
-        /// no call refuses against itself [EFF-5]: the exhibited row with
-        /// every subsumed entry dropped and every pair of entries on one
-        /// parameter that a call always refuses merged into one write.
+        /// The exhibited row without the entries another of its entries
+        /// covers, in EFF-1 canonical spelling: EFF-2 admits it for the body,
+        /// EFF-1 admits it as written, and every entry is an exhibited path.
         expected_row: String,
         /// The row the declaration writes, in the same spelling.
         found_row: String,
@@ -1104,8 +1154,8 @@ pub enum SemanticIssueKind {
         missing: Vec<String>,
         /// Declared categories and paths the body does not exhibit.
         extra: Vec<String>,
-        /// Exact restructuring required by EFF-2.
-        mechanical_fix: &'static str,
+        /// The repair [DIAG-1]: declare `expected_row`.
+        mechanical_fix: String,
     },
     /// A generic type parameter named a source contract as its bound.
     SourceContractGenericBound,
@@ -1247,6 +1297,49 @@ pub struct CheckedProgram<'classified, 'lexed, 'source> {
 }
 
 impl CheckedProgram<'_, '_, '_> {
+    /// [ENT-4] every judgment in the named functions that succeeded only
+    /// because the state it was asked in is contradictory, so that a test can
+    /// show a repaired program succeeds where its construct runs [DIAG-1].
+    #[cfg(test)]
+    pub(crate) fn contradictory_successes(&self, functions: &[String]) -> Vec<String> {
+        let mut found = Vec::new();
+        for function in self
+            .data
+            .functions
+            .iter()
+            .filter(|function| functions.contains(&function.name))
+        {
+            let summary = &function.entailment;
+            if matches!(
+                summary.body_disposition,
+                CheckedBodyDisposition::Uninhabited { .. }
+            ) {
+                found.push(format!("the body of `{}`", function.name));
+            }
+            for obligation in &summary.obligations {
+                if obligation.discharged && obligation.contradictory {
+                    found.push(format!(
+                        "a {:?} obligation in `{}`",
+                        obligation.family, function.name
+                    ));
+                }
+            }
+            for call in &summary.call_goals {
+                if call.disposition == entailment::CallGoalDisposition::Discharged
+                    && call
+                        .evidence
+                        .contains(&entailment::CallGoalEvidence::AllDerivable)
+                {
+                    found.push(format!(
+                        "the call requirement `{}` in `{}`",
+                        call.rendered_goal, function.name
+                    ));
+                }
+            }
+        }
+        found
+    }
+
     #[cfg(test)]
     pub(crate) fn element_type(&self, element: CheckedElement) -> Option<CheckedType> {
         self.data.elements.get(element.0 as usize).copied()

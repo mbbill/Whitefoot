@@ -309,18 +309,3 @@ pub(crate) enum GoalOperation {
         constant: Option<CheckedConst>,
     },
 }
-
-/// First occurrence-local actual value in structural operand order, when a
-/// call goal needs FN-8's stronger bind-then-prove restructuring.
-pub(crate) fn first_ephemeral_argument(expression: &GoalExpression) -> Option<u32> {
-    match expression {
-        GoalExpression::Datum(GoalDatum::EvaluatedValue {
-            occurrence: EvaluatedValueOccurrence::CallArgument { argument, .. },
-            ..
-        }) => Some(*argument),
-        GoalExpression::Operation { arguments, .. } => {
-            arguments.iter().find_map(first_ephemeral_argument)
-        }
-        GoalExpression::Datum(_) => None,
-    }
-}

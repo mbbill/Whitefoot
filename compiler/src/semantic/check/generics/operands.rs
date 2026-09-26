@@ -272,8 +272,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.issue_node(
             row.rule,
             call,
-            SemanticIssueKind::type_mismatch(
-                match row.admitted {
+            SemanticIssueKind::UnadmittedOperandShape {
+                expected: match row.admitted {
                     AdmittedShapes::Window => "a `Slots` or `Ring` operand [OP-10]",
                     AdmittedShapes::Ring => "a `Ring` operand, which is what this row admits",
                     AdmittedShapes::BoxedRuntimeSlots => "a `Box<Slots<T>>` operand",
@@ -282,8 +282,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     }
                     AdmittedShapes::AnyValue => "an owned place of one type [OP-11]",
                 },
-                "an operand outside this operation's admitted set",
-            ),
+                mechanical_fix: "pass an operand of the admitted shape, or use an operation whose row admits this operand's shape",
+            },
         )
     }
 
@@ -407,7 +407,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// type it can name. Every ownership, liveness, validity and effect
     /// judgment on the same operand is made once, by the ordinary argument
     /// check against the instance this oracle selects.
-    fn place_selected_type(
+    pub(in crate::semantic::check) fn place_selected_type(
         &self,
         place: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
@@ -425,7 +425,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// A range binding stores its element in `LocalBinding::ty`, so retaining
     /// the kind prevents an index from projecting through a composite element
     /// a second time.
-    fn place_selected_kind(
+    pub(in crate::semantic::check) fn place_selected_kind(
         &self,
         place: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,

@@ -109,22 +109,20 @@ rarely insert at the same place.
   comparison and unchanged parse outcomes over the corpus. Reopen when check
   time limits an experiment.
 
-- **Some ENT-3 sources read no measure operand.** S7's constant-offset,
-  checked-offset, exact-division, remainder and unsigned `iand` rows read an
-  operand the specification calls an admitted term or constant through the
-  flow's tracked-place and constant reader, which omits ENT-2 clause (b)
-  measure terms; S5/S6 copies, S1 comparisons and S11 counted captures do
-  read measures. So `let r = x % deref(src).len;` establishes no
-  `r < deref(src).len`, and a following `deref(src)[r]` is rejected under
-  OP-4 although binding the length first is accepted. Other flow readers of
-  the same shape (subscript offset terms, S13 index captures, allocation
-  lengths, range-formation operands, integer-domain operands, the ENT-5 `Ok`
-  payload) are unverified; affine images already cover some of them. Repair
-  with one complete ENT-2 term reader, and validate it with paired direct and
-  let-bound cases for each source, including a write that kills the measure,
-  requiring no other verdict change. Deferred from the counted-endpoint
-  repair, which changed only S11's reading; reopen with the next entailment
-  change or when a program needs the direct form.
+- **Some ENT-3 sources read no measure operand.** S5/S6 copies, S1
+  comparisons, S11 counted captures, every S7 operation row and a checked
+  integer row's success payload read an operand the specification calls an
+  admitted term or constant through one reader that includes the MSR-1
+  measure terms, so `let r = x % deref(src).len;` establishes
+  `r < deref(src).len`. Other flow readers of the same shape (subscript offset
+  terms, S13 index captures, allocation lengths, range-formation operands,
+  integer-domain operands, the `Ok` constructor's payload) are unverified;
+  affine images already cover some of them. Repair with the same reader, and
+  validate it with paired direct and let-bound cases for each source,
+  including a write that kills the measure, requiring no other verdict change.
+  Deferred from the counted-endpoint and operation-fact repairs, which changed
+  only S11's and S7's reading; reopen with the next entailment change or when
+  a program needs the direct form.
 
 - **Joined reference proofs lose useful target-relative information.** A
   reference selecting either of two freshly empty Slots cannot establish the
@@ -336,6 +334,119 @@ rarely insert at the same place.
   and a prelude-spelled source declaration that still reaches neither path.
   Reopen when a prelude collision rule changes.
 
+- **Some one-argument row pairs are refused at every call.** EFF-5 leaves a
+  pair of one argument's entries uncompared when their declared paths overlap
+  at every position, and lists the step pairs that decide that. The list
+  omits a range position beside an index position or a window part, which no
+  OWN-7 family separates either. So `reads(values[start..end]),
+  writes(values[slot])` is compared, never separated, and refused at every
+  call, including `start: 0_u64, end: 2_u64, slot: 3_u64`. The writer can
+  declare `reads(values), writes(values[slot])` instead, which is callable
+  but reads all of `values` in every PAR-1 footprint. The EFF-2 repair
+  suggests exactly the refused row: a body that reads the length of
+  `deref(values)[start..end]` and writes `deref(values)[slot]`, declared
+  `writes(values[slot])`, is told to declare `reads(values[start..end].len),
+  writes(values[slot])`, a row no call admits, against DIAG-1. The ground of
+  that suggestion in `design/compiler/rejection-payloads.md`, that every pair
+  such a row leaves on one parameter either overlaps whatever its positions
+  are or depends on positions each call proves, does not hold for these
+  pairs. Two repairs keep that ground: add these pairs to EFF-5's list and
+  make `overlaps_at_every_position` answer by the same OWN-7 judgment instead
+  of stopping at any range step, or give OWN-7 a family that separates an
+  index from a range. Either changes EFF-5 or OWN-7 and the owner decides.
+  Validate with that call accepted, a caller fact outside `slot` surviving,
+  the EFF-2 suggestion accepted at a call, and two index positions and two
+  range positions of one argument still compared. Found while stacking the
+  repair-wording and one-argument-row changes; reopen with the owner's
+  direction.
+
+- **Most repairs outside the goal families have no pinned pair.**
+  `compiler/diagnostic-repairs` pins every repair with its rejected source
+  and a program for each alternative, and keeps the words in one module;
+  `driver::pinned_repairs` holds 66 pairs, nearly all for goals, effect rows
+  and TYPE-2's opaque-struct refusals, while most of the eighty-odd sites
+  across the checker that print a fixed repair sentence have none. Among
+  them are TYPE-2's "build it with a construction function [OP-13]" for a
+  storage shape or a cell, OWN-1's "write `move p` for the affine place" and
+  "use the copy place without `move`", and TYPE-9's inline-shape and
+  content-move repairs. Some cannot be carried out as written: TYPE-9's
+  content-move repair writes `free_empty(move b)` without the argument name
+  GRAM-11 requires and offers the cell's scope-exit release to a content
+  whose elements are linear, and PROV-6's partial-consume repair writes the
+  placeholder `let N(f: a, ...) = move v;`. Pin each with a program per
+  alternative, rewording those that fail, and move the sentences into
+  `check/repairs.rs`; validate by the pair test. Found in the review of the
+  opaque-struct repair; reopen with the next diagnostics change or when an
+  agent follows an unpinned repair that fails.
+
+- **A cell taken apart with no binder is repaired by removing the
+  statement, even when its content is linear.** TYPE-2's repair for
+  `let Box(..) = move cell;` is "remove this statement", and so is the
+  repair for a binder over a place the checker cannot type as a cell. With
+  a linear content the removal leaves the cell to PROV-6's
+  LinearValueNotConsumed at scope exit, and with a binder its uses become
+  unresolved. DIAG-1 holds, since the refused judgment succeeds and the
+  later ones judge the program's own statements, but a repair that moves
+  the content out (`let content = move cell.inner;`) or names
+  `free_empty` for a runtime-capacity content would save a round. Validate
+  with a pinned pair for each; reopen when an agent is seen needing that
+  round.
+
+- **Four design nodes keep wording that later changes moved past.**
+  `language/ownership/copy-classification`'s second decision still says the
+  prelude declares `Box`, `Slots`, `Ring` and the fourteen host handles
+  `nocopy` or `nodrop`, although the host handles moved to the standard
+  library's host modules (the specification's OWN-1 already says so).
+  `language/system-interface/opaque-scalar-types` calls `exit_status` and
+  `socket_address_v4` construction functions, the term
+  `language/data-model/opaque-struct` now keeps for OP-13's rows, and
+  opaque-struct's third decision still names "the separate system
+  declaration domain the prelude is deliberately not" where the refused
+  domain concerns the standard library's host declarations too.
+  `compiler/diagnostic-repairs`' fourth decision places the pairs in the
+  pinned-sentence corpus, which now lives in `driver::pinned_repairs`. Each
+  needs an amendment and the owner's ruling; found in the second review of
+  the opaque-struct repair; reopen with the next change to any of these
+  nodes.
+
+- **Taking a storage shape apart is refused as a type mismatch.**
+  `let Slots(len: l, cap: c) = move w;`, and the same statement naming
+  `Array` or `Ring`, is rejected with TYPE-5 "found: a value of another type"
+  by `destructuring_shape_rejection` in `check/control/results.rs`, because
+  among the prelude's containers only `Box` reaches the TYPE-2 refusal there.
+  TYPE-9 makes a destructuring `let` naming any of the four a TYPE-2 refusal
+  with a repair, and no conformance case covers the three shapes. Refuse them
+  under TYPE-2 at the complete statement with a repair that reads the
+  measures as fields (`let l = w.len;`), pinned, and add a negative case per
+  shape. Found in the review of the opaque-struct repair; reopen with the
+  next change to destructuring or to the storage shapes.
+
+- **A field of a program's opaque struct cannot be read.** TYPE-2 says an
+  opaque struct's fields obey the ordinary field, ownership and release
+  rules, but the checker gives a source opaque struct the fieldless
+  `CheckedNominalKind::Opaque` (`compiler/src/semantic/model.rs`), so
+  `token.value` and `deref(token).value` on a parameter of a program's
+  `opaque struct Token { value: u64; }` are rejected with TYPE-5. No value of
+  such a struct is ever formed, so only functions no call can reach with a
+  value are refused, and host handles have no fields. Give the kind its
+  declared fields for reads, writes and moves out; validate with an accepted
+  read, write and move out on such a parameter. Found in the review of the
+  opaque-struct repair; reopen when a program has a reason to declare an
+  opaque struct with fields, or with the next change to nominal kinds.
+
+- **An index beside a window's `last` is never separated at a call.** WIN-2
+  separates a live `r[i]` from `r.last` once `i != r.len - 1` is proved, and
+  `separation` answers that for two places, but the call-site candidates
+  `separable_by_position` hands to the entailment fragment include only an
+  index beside `next` or `free`. So a pair such as `reads(r[i])`,
+  `writes(r.last)`, from one argument or two, is refused at every call even
+  where the caller proves `i` live and not last. Add a candidate that proves
+  liveness and `i != r.len - 1` in the call's entry state, beside the `Live`
+  candidate; validate with an accepted call that proves both, a refused call
+  that proves only liveness, and the pair's PAR-1 judgment unchanged. Found
+  in the stack review; the pair is rare, so reopen when a window operation
+  needs it.
+
 ## Containers and storage lowering
 
 - **Validate a shared Ring wrap calculation independent of layout bounds.**
@@ -414,9 +525,13 @@ rarely insert at the same place.
 - **PriorityQueue has distinct sift and return-boundary costs.** The
   [complete library comparison](../research/experiments/container-representation/priority-library/RESULTS.md)
   measures retained scalar pop/push at 1.510--1.722 times same-algorithm C for
-  16/256 elements. WF returns push's Result through a pointer and clears its
-  inactive payload; C returns the scalar result in registers. Their causal
-  shares are unmeasured. Normal wide replacement also costs 1.178--1.289 times
+  16/256 elements. In that comparison WF returned push's Result through a
+  pointer and cleared its inactive payload; C returns the scalar result in
+  registers. The scalar cohort's three-leaf `Result<unit, u64>` now returns in
+  registers too ([result-register investigation](../research/investigations/result-registers/DESIGN.md#selection)),
+  while the inactive payload is still cleared and the wide cohort keeps its
+  destination. The causal shares, and what that change recovered, are
+  unmeasured. Normal wide replacement also costs 1.178--1.289 times
   the swap control at those sizes, while retained replacement reverses the
   direction. Separately, wide hole-sift C halves counted movement on large
   complete traces; ordinary WF swaps cannot be credited with that algorithm's
@@ -430,6 +545,57 @@ rarely insert at the same place.
   interference obligations; reopen for the indexed heap composition or an
   application dominated by these paths. Do not report universal native parity
   from the large scalar queue results.
+
+- **Small results beyond the per-leaf register budget still use a
+  destination.** A stored result returns in registers only when its scalar
+  leaves fit the x86-64 budget of three integer-class words and two floating
+  leaves ([result-register investigation](../research/investigations/result-registers/DESIGN.md#demotion-probe)).
+  A 16-byte result with four 32-bit fields, a small byte array and the 32-byte
+  opaque `ExitStatus` still pass through memory. So does every result with
+  four to eight integer words, or three to eight floating leaves, on AArch64.
+  Packing small integer leaves into shared words, or a per-target budget,
+  could carry some of these. Either one adds per-target lowering to emitted
+  code and to linked definitions. A third floating leaf on x86-64 cannot join
+  them: it returns through the x87 stack, which is not bit-exact for signaling
+  NaNs. Besides the launcher's `ExitStatus`, the maintained programs keep
+  eight surviving calls with four-word results, in `prefix_expression.wf`,
+  `owned_link_cursors.wf`, `option_slots.wf` and `containers/ordered.wf`,
+  which an AArch64 budget would return in registers
+  ([corpus](../research/investigations/result-registers/DESIGN.md#corpus)).
+  None is on a measured path, and the benefit is unmeasured. Reopen when a
+  maintained program keeps such a call on a measured path. Validate with
+  unchanged source and both lowerings compiled. Require the destination
+  round trip to disappear without a new demotion, a lost float bit pattern,
+  or a regression in the program's timing, on each target that changes.
+
+- **The hash-map `find` stays out of line because its probe loop is
+  unrolled first.** In `tests/programs/containers/hashmap.wf`, LLVM fully
+  unrolls `find`'s eight-slot probe loop while it optimizes `find` alone.
+  When the inliner then reaches `map_trace`, `find` costs 580 against the
+  `-O2` threshold of 225 (595 on main), so its seven calls stay out of line,
+  as do the three `remove` calls
+  ([lowering comparison](../research/investigations/result-registers/DESIGN.md#lowering)).
+  In that investigation's rejected merged-returns lowering, the loop was not
+  yet unrolled at that point. `find` cost 105 and `remove` 140, both were
+  inlined and then peeled, and the hash-map trace ran at 0.601 of main's time
+  against 0.956 for the selected lowering. Both lowerings return in
+  registers, so the inlining separates them. How much of that gain an
+  inlined, fully unrolled `find` keeps is unmeasured, as is whether other
+  small container operations with fixed probe loops behave the same way.
+  Candidate levers: loop metadata on the emitted probe loop that leaves it
+  to the late unroll pass, after inlining; an unroll threshold or pass order
+  in the pipeline the driver requests that runs full unrolling after the
+  inliner; or an inline hint on small container operations, which alone
+  raises the threshold only to 325. Each lever changes emitted code for every
+  program. Validate on unchanged source against a criterion fixed before
+  measuring: `find` and `remove` are inlined into `map_trace`, the
+  20,000,000-repetition hash-map trace gains beyond run-to-run variation,
+  `.text` across the maintained programs and container bundles stays within
+  a stated growth bound, and the maintained paired compute comparison
+  passes. Deferred because it is a host inlining-policy question separate
+  from the result ABI, with one program as evidence. Reopen when a
+  maintained workload's time is dominated by an out-of-line container
+  lookup, or when the driver's optimization pipeline is revisited.
 
 - **Indexed small-payload costs with retained boundaries need attribution.**
   The [native-cost record](../research/experiments/container-representation/indexed-library/RESULTS.md#remaining-native-costs)
@@ -534,6 +700,35 @@ rarely insert at the same place.
   `records` failure nor proves that any one general layout choice caused it.
   Keep the deferred general representation study separate, and close this item
   only when the relevant costs and chosen tradeoffs have discriminating evidence.
+
+- **A target-layout failure names no allocation site or admitted bound.** A
+  program whose OP-9 proof retains a count bound the selected target cannot
+  hold, such as the language's own ceiling `u64::MAX / stride_ceiling(T)`,
+  passes checking and stops at [STOR-6] target qualification with
+  `target layout failure in TargetLayout: TargetLayout(Unrepresentable(RuntimeSizedAllocation))`,
+  which names no source site, no proved bound and no bound the target
+  admits. The numbers exist where the check fails, in the runtime-sized
+  allocation branch of the source-call validation in
+  `compiler/src/target.rs`: the retained bound, the element's target
+  stride, the descriptor header and `runtime_allocation_max()`, which give the
+  largest admitted count `(max - header) / stride`. Design: `IrSourceCall`
+  carries the call's node path, copied from the checked call during lowering;
+  a `TargetLayoutFailure` variant carries the site, the proved bound and the
+  admitted bound (the enum is `Copy` and crosses many `?` returns, so an index
+  into a side table keeps it `Copy`); the driver renders the site as a source
+  location beside the two numbers, still as a target-layout stop and never as
+  a source rejection [STOR-6]; and
+  `u16_buffer_whose_proved_count_exceeds_the_target_byte_domain_is_a_target_failure`
+  in `compiler/src/driver/tests.rs`, which pins today's stop by
+  `RuntimeSizedAllocation` in its detail, changes with it. No specification
+  change. Validate with a program that proves the OP-9 ceiling and calls the
+  allocating function from its entry: the failure names the allocation's call
+  site, the proved bound and the selected target's largest admitted count,
+  while the same program bounded below that count builds. Deferred because the
+  OP-9 repair no longer offers the ceiling as the bound to write, which closes
+  the route the [repair-wording work](../research/investigations/repair-wording/DESIGN.md#implementation)
+  found into this stop; reopen when a writer report or a program meets the
+  unlocated failure.
 
 ## Parallel lowering and runtime
 
@@ -816,7 +1011,15 @@ rarely insert at the same place.
   Its identical-image control nevertheless retained a `records` W4 suspect at
   0.962815708 with four adverse pairs. The concrete PR 70 regression is repaired,
   while its cause and the earlier and remaining control variation are not
-  attributed. The [PR 78 hosted records inspection](../research/investigations/compute-model/DESIGN.md#records-w4-hosted-comparison-remains-unresolved)
+  attributed. The
+  [result-register placement controls](../research/investigations/result-registers/DESIGN.md#hosted-compute-regression)
+  show on a local Intel host that shifting records' two loop copies by 16 to
+  48 bytes, with no executed instruction changed, moves main or that
+  investigation's rejected merged-returns lowering by up to 18% and reverses
+  their order at W2 and W4, while moving only the runtime does not. Its
+  selected lowering's byte-identical records images read 1.073 at W1 on an
+  EPYC 7763 and 0.855, a single-width suspect, on an EPYC 9V74. The
+  [PR 78 hosted records inspection](../research/investigations/compute-model/DESIGN.md#records-w4-hosted-comparison-remains-unresolved)
   retains repeated W4 suspects at `30198a19` and `53c68c29`: the latter has
   wall/CPU ratios 0.898002/0.908317 with four adverse pairs, while its records
   null is not suspect. Exact x86 objects show unchanged hot work and runtime
@@ -873,6 +1076,19 @@ rarely insert at the same place.
   emitting the call as the join site with its release after the join and
   comparing published bytes at several worker counts with the sequential
   lowering.
+
+- **A rebound reference parameter's holder read overlaps every access
+  through it.** PAR-1 reads a reference variable's own binding at each use,
+  which the `let` that forms it or a `set` that rebinds it writes. A
+  reference parameter's binding also stands for the place it names, so once
+  a body rebinds the parameter (`set values = &deref(values)[0_u64..8_u64];`),
+  that holder read overlaps every write through `values` and denies pairs
+  PAR-1 permits, such as a call writing one range of `values` beside a `let`
+  that forms another. Giving the holder a place root of its own, which
+  overlaps only itself, would separate the two. Validate with that pair
+  permitted again and the rebinding still ordered against the uses after it.
+  Found in the review of the holder-read fix; reopen when a program rebinds a
+  reference parameter on a parallel path.
 
 - **Parallel actualization is decided during translation.** A counted-loop
   split is chosen while its body is being lowered
@@ -1032,76 +1248,6 @@ rarely insert at the same place.
   that capture identity stays unchanged. Deferred because the separation
   proof already needs a binding there and the rejection names the call;
   reopen when a writer report shows the `?` blocking a repair.
-- **Proposal: disposition-specific restructurings for proof rejections.** A
-  `refuted` goal is false in the facts where it stands [ENT-4], so no added
-  requirement, invariant or proof step can establish it, yet the FN-8, OP-2
-  and OP-6 texts ask for exactly that for both dispositions, and an FN-9
-  rejection carries no restructuring at all. For an agent that applies
-  the repair literally, a refuted goal should name a change to what reaches
-  the site — the call's arguments, the operands, the returned value or the
-  state that reaches it — or a deliberate guard where rejection is intended
-  behavior, while an unproved goal keeps "establish the fact". This needs a
-  specification amendment of DIAG-1's FN-8 sentence and the FN-8, FN-9, OP-2
-  and OP-6 rejection text (with any FN-9 payload field it adds), followed by
-  the compiler texts, the pinned sentences and the unit tests that assert a
-  disposition's fix; a compiler-only change would diverge from the texts the
-  specification prescribes. Validate on one refuted and one unproved probe per
-  rule, such as `255_u8 + 1_u8`, `cvt::<u32, u8>(256_u32)`, a literal actual
-  outside a callee requirement, and an ensures relation false at its return.
-  Close when the amendment and its derived updates land, or the owner keeps
-  one restructuring per rule.
-- **Printed restructurings have drifted from the specification's texts.**
-  DIAG-1 includes a mechanical fix "exactly where the owning rule requires
-  one", and several rules prescribe its words, but the checker's strings on
-  main differ: FN-8 prescribes `establish the complete callee requirement
-  with one dominating branch or one preceding proved invariant before the
-  call` and prints "when the call is required to succeed, establish the entire
-  instantiated callee requirement with a verified requirement, ..."; OP-6's
-  printed repair likewise elaborates its prescribed one; and rules that
-  prescribe none print one anyway: EFF-1's row conditions carry a
-  `mechanical_fix` on main, and EFF-2's `EffectMismatch` prints "declare
-  exactly the row the body exhibits: ..." though EFF-2 requires no
-  restructuring. (EFF-1's subsumed-read rejection, which requires no
-  restructuring, carries none.) Two of these printed fixes, applied
-  literally, lead to a further rejection:
-  (a) EFF-2's "add every missing category and path and remove every extra
-  one" no longer describes `expected_row`, which merges entries a call
-  would refuse. A body that reads `stats` and writes `stats.count`,
-  declared `writes(stats.count)`, gets `expected_row: "writes(stats)"`,
-  `missing: ["writes(stats)"]` and `extra: []`; adding the missing entry
-  and removing nothing gives `writes(stats), writes(stats.count)`, which
-  EFF-1 and EFF-2 admit and EFF-5 refuses at every call. Declaring
-  `expected_row` itself is callable.
-  (b) EFF-1's category-order fix turns `writes(v), reads(v)` into
-  `reads(v), writes(v)`, which then meets the subsumed-read rejection, one
-  more compile round for a repair that should have deleted the read.
-  Audit every rejection in one pass, rule by rule, and either update the
-  specification's text or the compiler's; the criterion is that every
-  restructuring the specification prescribes equals the printed one, and a
-  printed fix exists only where a rule requires one or the specification is
-  amended to allow it, and never leads to a further rejection of the same
-  construct. Pinned sentences and unit tests that assert the texts change
-  with it.
-- **Question for the owner, raised during the source-spelling fix: should a
-  row whose entries on one parameter overlap be admitted?** [EFF-5] compares
-  every pair of a call's substituted entries, including two that one
-  argument supplies, so `reads(p), writes(p.x)`, `reads(p.x), writes(p)` and
-  `writes(p), writes(p.x)` are refused at every call, while [EFF-2]'s
-  covering relation admits each at the declaration and [EFF-1] forbids only
-  the same-path pair `reads(p), writes(p)`. The checker refuses that pair at
-  the declaration (EFF-1's "the pair is never written for one path"), and
-  EFF-2's suggested row merges every such pair into one write of their
-  common path, so a suggestion is always callable. The remaining
-  declarations still fail only at their first call, as the uncalled rows in
-  `ref2-pos-bystander-preservation.wf` show. Two specification directions
-  remove the dead end: EFF-1 or EFF-2 refusing any row with two overlapping
-  entries on one parameter where one writes, or EFF-5 exempting a pair that
-  one argument supplies unless the two entries differ only in index or range
-  positions. The first keeps EFF-5's per-call guarantee and makes those
-  conformance rows rejections; the second changes what a single-parameter
-  row promises about aliasing inside the callee. Close with the owner's
-  choice; validate it against the bystander cases and the container library
-  rows.
 - **A few payload strings still carry non-source forms.** The source-spelling
   fix left three: the FN-9 `relation` field prints the normalized relation
   with unsuffixed literals, such as `"w.value - 0 <= -1"` for
@@ -1137,6 +1283,63 @@ rarely insert at the same place.
   the bounds. Either report each bound or collect through growable storage as
   `wfgrep.wf` now does; reopen when the program is pointed at a larger tree or
   its constant-capacity form stops being the point of the case.
+
+- **A callee in another module is named without the path the call wrote.**
+  FN-8's `concrete_callee` renders a callee as its declaration name with its
+  instance arguments (`render_function_instance` in
+  `compiler/src/semantic/check/expressions.rs`), so a refuted call written
+  `stats::take(counter: &counter, amount: 12_u64)` through a module alias
+  prints `concrete_callee: take`. Two modules may each declare `take`
+  [MOD-5], so the name alone is ambiguous; the `requires_clause` location
+  points at the declaring record, but the payload does not give the spelling
+  the call wrote. Render the callee from the call's written callee path,
+  alias or `pkg::` prefix included, wherever a payload names a called
+  function; validate with a two-module probe in which both modules declare
+  the callee's name. Deferred because the location already locates the
+  declaration and the change reaches every payload that names a callee;
+  reopen when diagnostics for modules are next revised or an agent report
+  shows the ambiguity.
+
+- **FN-9 prints its relation in normalized form.** [DIAG-1] fixes the FN-9
+  payload as the instantiated normalized relation, so `ensures result <
+  10_u64` failing at `return 20_u64;` prints `relation: 20 - 10 <= -1`,
+  without type suffixes and with the comparison rewritten as an L0 bound; an
+  agent has to translate it back to the clause it wrote. Printing the clause
+  with the returned value substituted, `20_u64 < 10_u64`, beside or in place
+  of the normalized form would read as written, and needs a DIAG-1 payload
+  amendment plus the tests that pin the relation. Validate on the FN-9 probes
+  of the [repair-wording investigation](../research/investigations/repair-wording/DESIGN.md#probes)
+  and its writer trial; reopen when that work changes the FN-9 payload or a
+  writer report shows the normalized form costing a round.
+
+- **Compiler comments cite the retired DIAG-3.** DIAG-3 was the v0.39 runtime
+  claim-trap record, retired with claims in v0.40, yet four comments still
+  cite it: three for words that are now [DIAG-1]'s (byte identity only where
+  selection and encoding are fixed, and the `unproved` or `refuted`
+  disposition) in `compiler/src/driver/pinned_sentences.rs`,
+  `compiler/src/semantic/tests/postconditions.rs` and
+  `compiler/src/semantic/tests/requires.rs`, and one, the module doc of
+  `compiler/src/semantic/permission_ledger.rs`, for the retired record
+  itself. A reader following the reference finds no rule. Cite DIAG-1 in the
+  first three and drop the ledger's clause; reopen with the next edit of any
+  of these files.
+
+- **The callee-`ensures` route can name a call whose result no longer
+  reaches the goal.** `call_results` in `compiler/src/semantic/check/repairs.rs`
+  traces the values a goal reads back to call results through a closure that
+  ignores control flow and intervening writes. In
+  `ent5-neg-readonly-field-callee-writes-base`, the loop bound
+  `entries[1_u64].width` traces to the `make_entry` call that filled
+  `entries`, although the element that reaches the goal was replaced through
+  `widen`'s separate `make_entry` call, whose result a statement writes into
+  storage without binding it. No `ensures` on `make_entry` relates that width
+  to `cells.len`, so the route cannot be carried out there, while the guard
+  printed beside it works. The route states the condition it needs, so
+  [DIAG-1] holds; the repair is only less direct than it could be. Stop the
+  trace at a write that replaces the traced storage before the goal, or offer
+  the route only for a value bound from a call and not written since; validate
+  with that case and the existing callee-route pins, and reopen when a writer
+  report shows the route costing a round.
 
 ## Modules and libraries
 
@@ -1232,7 +1435,7 @@ rarely insert at the same place.
   every file named here is under 4,000 lines.
 
 - **The checker's program pass shares one file with its signature and goal
-  code.** `compiler/src/semantic/check.rs` has 4,349 lines, 3,597 of them in
+  code.** `compiler/src/semantic/check.rs` has 4,633 lines, 3,830 of them in
   one `impl Checker` block; the modular compilation work added about 600
   (module inventories, supplied function actuals, receipt wiring). `check/`
   already holds sibling `impl Checker` files, so the split moves methods, not
@@ -1415,11 +1618,16 @@ each is resolved by a discussion and a tree change.
   growth or rebase dominates its work. Evaluate the already-open affine
   contract question below before choosing a new storage operation; require
   exact length, emptied-old-owner and unchanged element-order evidence.
-- **The automatic-fact menu is a leftover.** [ENT-3] admits a narrow and
-  asymmetric set of arithmetic idioms as automatic facts, each added for one
-  proof pattern, with no general criterion and no counterpart for rows it
-  omits, such as a lower bound from `ior`. The owner wants it made principled;
-  nobody has had the time.
+- **Exact images for non-wrapping wrap forms and lossless shifts.** A
+  wrapping add, subtract or multiply whose operand intervals prove it cannot
+  wrap, and a shift by a constant that loses no bit, receive their
+  [ENT-3.S7] interval and offset relations but not the [ENT-6] affine image
+  of the corresponding exact operation. The
+  [operation-fact investigation](../research/investigations/automatic-operation-facts/DESIGN.md#42-rejected-alternatives)
+  deferred that step (X): no recorded probe needed it, the exact row already
+  states the identity, and with the new intervals the exact row is provable
+  wherever the step would apply. Reopen when a proof needs the identity and
+  the writer cannot use the exact row.
 - **The two-premise cutoff of automatic affine derivation.** [ENT-6] tries
   zero, one, and two premises and no more without a written certificate. Why
   the line sits at two, against one or three, is not remembered and needs a

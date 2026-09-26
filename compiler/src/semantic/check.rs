@@ -11,6 +11,7 @@ mod nominals;
 pub(crate) mod publication;
 mod receipts;
 mod references;
+mod repairs;
 mod requires;
 mod support;
 mod tail_calls;
@@ -36,7 +37,7 @@ use super::entailment::{
 };
 use super::goal::{
     CheckedCallRequirement, CheckedRequirement, ConcreteGoal, GoalDatum, GoalExpression,
-    GoalOperation, GoalProjection, first_ephemeral_argument,
+    GoalOperation, GoalProjection,
 };
 use super::model::{
     BindingId, CheckedConst, CheckedConstant, CheckedConstantId, CheckedElement, CheckedExpression,
@@ -438,9 +439,6 @@ impl TypedExpression {
     }
 }
 
-/// [EFF-2]'s only repair: the declaration must equal the exhibited row.
-const EFF2_ROW_FIX: &str = "declare exactly the row the body exhibits: add every missing category and path and remove every extra one; EFF-2 admits no wider and no narrower declaration than the union of the body-syntactic and release contributions";
-
 /// One ordinary resolved-place contribution to the enclosing effect row.
 #[derive(Clone, Debug)]
 struct EffectPath {
@@ -815,136 +813,44 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
-    /// The row an [EFF-2] rejection suggests: one EFF-2 admits for this body
-    /// in both directions, that [EFF-1] admits as written, and that no call
-    /// refuses against itself [EFF-5].
+    /// The row an [EFF-2] rejection suggests: the exhibited row without the
+    /// entries another of its entries covers.
     ///
     /// The exhibited set records each access as the body made it, so it can
-    /// hold a read and a write of one path, or a read of a whole parameter
-    /// beside a write below it. [EFF-1] never writes the first pair, because
-    /// `writes(p)` subsumes `reads(p)`. [EFF-5] compares every pair of one
-    /// call's substituted entries, including two that one argument supplies,
-    /// so the second pair is refused at every call even though EFF-2 admits
-    /// it at the declaration. Every pair of entries on one parameter that a
-    /// call refuses whatever its arguments are is therefore merged into one
-    /// `writes` of the two paths' common prefix, and every entry another
-    /// entry covers is dropped. Each merge keeps EFF-2's covering relation
-    /// both ways: the merged write lies at or above an exhibited write, and it
-    /// covers everything its two members covered. Two positions whose
-    /// separation depends on the values a call supplies stay apart; that is
-    /// the call site's own proof question.
-    fn suggested_effect_row(
-        &self,
-        exhibited: &EffectSet,
-        signature: &FunctionSignature,
-    ) -> Result<EffectSet, CheckStop> {
-        let mut reads = exhibited.reads.clone();
-        let mut writes = exhibited.writes.clone();
-        loop {
-            let mut merged = None;
-            'search: for write in &writes {
-                for other in reads.iter().chain(&writes) {
-                    if std::ptr::eq(write, other) || write.root != other.root {
-                        continue;
-                    }
-                    if self.row_entries_conflict(signature, write, other)? {
-                        merged = Some(Self::common_effect_prefix(write, other));
-                        break 'search;
-                    }
-                }
-            }
-            let Some(prefix) = merged else {
-                break;
-            };
-            writes.retain(|path| !Self::effect_path_covers(&prefix, path));
-            reads.retain(|path| !Self::effect_path_covers(&prefix, path));
-            writes.push(prefix);
-        }
+    /// hold a read and a write of one path, or a write of a whole parameter
+    /// beside a write below it. A `writes` entry states every access at or
+    /// below its path, so [EFF-1] refuses any entry it covers, and a `reads`
+    /// entry covered by another `reads` entry adds nothing to the row. What
+    /// remains is exact: every entry is an exhibited path, EFF-2 admits it in
+    /// both directions, and EFF-1 admits it as written. Two entries left on one
+    /// parameter either overlap at every position, which [EFF-5] does not
+    /// compare, or overlap only for some position values, which the call's
+    /// own proof decides.
+    fn suggested_effect_row(exhibited: &EffectSet) -> EffectSet {
         let mut suggested = EffectSet::NONE;
-        for path in &writes {
-            suggested.add_write(path.clone());
+        for path in &exhibited.writes {
+            let covered = exhibited
+                .writes
+                .iter()
+                .any(|entry| entry != path && Self::effect_path_covers(entry, path));
+            if !covered {
+                suggested.add_write(path.clone());
+            }
         }
-        for path in &reads {
-            let covered_by_write = writes
+        for path in &exhibited.reads {
+            let covered_by_write = exhibited
+                .writes
                 .iter()
                 .any(|entry| Self::effect_path_covers(entry, path));
-            let covered_by_read = reads
+            let covered_by_read = exhibited
+                .reads
                 .iter()
                 .any(|entry| entry != path && Self::effect_path_covers(entry, path));
             if !covered_by_write && !covered_by_read {
                 suggested.add_read(path.clone());
             }
         }
-        Ok(suggested)
-    }
-
-    /// [EFF-5] whether one call refuses these two entries of one row against
-    /// each other whatever arguments it supplies.
-    ///
-    /// Both entries are placed in the callee's own frame: each reference
-    /// parameter is its own root and each index or range position reads the
-    /// value parameter it names, exactly as the body sees them. Two entries
-    /// conflict when the one [OWN-7] relation finds them overlapping with no
-    /// index or range position left for a call's values to separate — the
-    /// pair [EFF-5] refuses outright rather than asks the fixed families.
-    fn row_entries_conflict(
-        &self,
-        signature: &FunctionSignature,
-        left: &super::model::CheckedStatePath,
-        right: &super::model::CheckedStatePath,
-    ) -> Result<bool, CheckStop> {
-        let captures = (0..signature.parameters.len())
-            .map(|ordinal| {
-                let ordinal = u32::try_from(ordinal)
-                    .map_err(|_| CheckStop::from(SemanticCompilerFailure::CounterOverflow))?;
-                Ok(super::places::CapturedValue::new(
-                    super::places::CaptureId::source(ordinal),
-                    super::places::CapturedTerm::Binding(BindingId(ordinal)),
-                ))
-            })
-            .collect::<Result<Vec<_>, CheckStop>>()?;
-        // Only a reference parameter roots a row entry [EFF-1]; an exhibited
-        // path with any other root names nothing a call substitutes.
-        let place =
-            |path: &super::model::CheckedStatePath| -> Result<Option<ResolvedPlace>, CheckStop> {
-                let Some(ordinal) = signature
-                    .parameters
-                    .iter()
-                    .position(|parameter| parameter.declaration == path.root)
-                else {
-                    return Ok(None);
-                };
-                let ordinal =
-                    u32::try_from(ordinal).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
-                Ok(Some(ResolvedPlace {
-                    root: super::places::PlaceRoot::Binding(BindingId(ordinal)),
-                    path: self.substitute_effect_steps(signature, path, &captures)?,
-                }))
-            };
-        let (Some(left), Some(right)) = (place(left)?, place(right)?) else {
-            return Ok(false);
-        };
-        Ok(
-            super::places::places_overlap(&super::places::UnprovedSeparations, &left, &right)
-                && Self::separable_by_position(&left, &right).is_none(),
-        )
-    }
-
-    /// The longest step prefix two effect paths of one root share [EFF-1].
-    fn common_effect_prefix(
-        left: &super::model::CheckedStatePath,
-        right: &super::model::CheckedStatePath,
-    ) -> super::model::CheckedStatePath {
-        let shared = left
-            .steps
-            .iter()
-            .zip(&right.steps)
-            .take_while(|(left, right)| left == right)
-            .count();
-        super::model::CheckedStatePath {
-            root: left.root,
-            steps: left.steps[..shared].to_vec(),
-        }
+        suggested
     }
 
     /// One `effect_path` in its written spelling [EFF-1]: the parameter's own
@@ -1078,12 +984,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// while a row declaring only a field is not covered by an access to the
     /// whole.
     ///
-    /// The two categories are not independent. [EFF-1] states that
-    /// "`writes(p)` subsumes `reads(p)`, so the pair is never written for one
-    /// path", so a declared write covers an exhibited read at or below its
-    /// path and an exhibited write answers for a declared read. A declared
-    /// write is answered only by an exhibited write: nothing subsumes a write
-    /// the body never makes.
+    /// The two categories are not independent. [EFF-1] states that a
+    /// `writes` entry "states every access at that path and below it", so a
+    /// declared write covers an exhibited read at or below its path and an
+    /// exhibited write answers for a declared read. A declared write is
+    /// answered only by an exhibited write: nothing subsumes a write the body
+    /// never makes.
     fn effect_row_matches(declared: &EffectSet, exhibited: &EffectSet) -> bool {
         exhibited.reads.iter().all(|access| {
             declared
@@ -1291,18 +1197,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         declaration: DeclarationId,
         name: &str,
     ) -> String {
-        let module = self
-            .resolved
-            .declaration(declaration)
-            .and_then(crate::DeclarationRecord::module)
-            .and_then(|module| {
-                self.resolved
-                    .syntax()
-                    .classified_bundle()
-                    .source_bundle()
-                    .module(module)
-            });
-        match module {
+        match self.declaring_module(declaration) {
             Some(module) if module.package() == crate::Package::Standard => {
                 format!("std.{}.{name}", module.path().join("."))
             }
@@ -1311,6 +1206,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             _ => name.to_owned(),
         }
+    }
+
+    /// The module whose records declare a declaration; `None` for a PRE-1
+    /// declaration and in a source bundle [MOD-3].
+    pub(in crate::semantic::check) fn declaring_module(
+        &self,
+        declaration: DeclarationId,
+    ) -> Option<&crate::ModuleRecord> {
+        self.resolved
+            .declaration(declaration)
+            .and_then(crate::DeclarationRecord::module)
+            .and_then(|module| {
+                self.resolved
+                    .syntax()
+                    .classified_bundle()
+                    .source_bundle()
+                    .module(module)
+            })
     }
 
     /// The concrete function ids of a substitution's function-kind actuals
@@ -2547,22 +2460,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // Each category is judged by [EFF-2]'s own two-way covering relation
         // rather than by set equality.
         if !Self::effect_row_matches(&signature.declared_effects, &exhibited) {
-            let suggested = self.suggested_effect_row(&exhibited, signature)?;
+            let suggested = Self::suggested_effect_row(&exhibited);
             let (missing, extra) = self.effect_row_difference(
                 &exhibited,
                 &suggested,
                 &signature.declared_effects,
                 signature,
             )?;
+            // [EFF-2] the repair is the suggested row itself: a row EFF-1 and
+            // EFF-2 admit for this body and no call refuses against itself.
+            let expected_row = self.render_effect_row(&suggested, signature)?;
             return self.issue_node(
                 SemanticRule::Eff2,
                 signature.effects_node,
                 SemanticIssueKind::EffectMismatch {
-                    expected_row: self.render_effect_row(&suggested, signature)?,
+                    mechanical_fix: format!(
+                        "declare the row as `{expected_row}`, which covers every access the body makes and no other"
+                    ),
+                    expected_row,
                     found_row: self.render_effect_row(&signature.declared_effects, signature)?,
                     missing,
                     extra,
-                    mechanical_fix: EFF2_ROW_FIX,
                 },
             );
         }
@@ -3986,7 +3904,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         super::entailment::ObligationFamily::ConversionDomain => SemanticRule::Op6,
                         super::entailment::ObligationFamily::AllocationFit => SemanticRule::Op9,
                         super::entailment::ObligationFamily::RangeFormation => SemanticRule::Ref4,
-                        super::entailment::ObligationFamily::CallSeparation => SemanticRule::Eff5,
+                        super::entailment::ObligationFamily::CallSeparation(_) => {
+                            SemanticRule::Eff5
+                        }
                         super::entailment::ObligationFamily::ReferencePreservation(_) => {
                             SemanticRule::Ref2
                         }
@@ -4097,12 +4017,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     } else {
                         return Err(SemanticCompilerFailure::InvalidResolution.into());
                     };
+                    let refuted = match obligation {
+                        crate::LoopInvariantProofObligation::Base => outcome.proof.base_refuted,
+                        crate::LoopInvariantProofObligation::Backedge => outcome.proof.step_refuted,
+                    };
+                    let (disposition, repair) = dispositions(refuted);
                     let mechanical_fix = match obligation {
                         crate::LoopInvariantProofObligation::Base => {
-                            "weaken or correct this invariant, or establish the missing facts before the loop so the invariant holds at the first loop header"
+                            repairs::loop_invariant_base(repair, &outcome.name)
                         }
                         crate::LoopInvariantProofObligation::Backedge => {
-                            "strengthen the invariant prefix, weaken or correct this invariant, or establish the missing body facts so every reachable normal fallthrough preserves it at the next loop header"
+                            repairs::loop_invariant_backedge(repair, &outcome.name)
                         }
                     };
                     let required_relation = match obligation {
@@ -4121,6 +4046,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             name: outcome.name.clone(),
                             obligation,
                             required_relation,
+                            disposition,
                             mechanical_fix,
                         },
                         request: None,
@@ -4178,9 +4104,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 rejection_node_path.clone(),
                                 self.tree.coordinate(node)?,
                             ),
-                            kind: SemanticIssueKind::UndischargedLocalInvariant {
-                                name: outcome.name.clone(),
-                                mechanical_fix: "weaken or correct this invariant, or establish the missing facts before this statement so AUTO proves its target in the entering context",
+                            kind: {
+                                let (disposition, repair) =
+                                    dispositions(outcome.check.target_refuted);
+                                SemanticIssueKind::UndischargedLocalInvariant {
+                                    name: outcome.name.clone(),
+                                    disposition,
+                                    mechanical_fix: repairs::local_invariant(repair, &outcome.name),
+                                }
                             },
                             request: None,
                         }));
@@ -4278,13 +4209,64 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         outcome.node_path.clone(),
                         self.tree.coordinate(node)?,
                     );
+                    let (disposition, repair) = dispositions(outcome.refuted);
+                    // [DIAG-1] what the goal reads selects its routes: a
+                    // canonical goal names its data, a bounds relation its
+                    // terms. A bounds or allocation residual is written from
+                    // the source atoms it relates, so it is itself a condition.
+                    let editable = self.editable_functions()?;
+                    let reads = match &outcome.canonical_goal {
+                        Some(goal) => repairs::GoalTerms::of_goal(
+                            goal,
+                            function,
+                            &outcome.written_before,
+                            &editable,
+                        ),
+                        None => repairs::GoalTerms::of_terms(
+                            &function.entailment.obligation_term_reads(outcome),
+                            function,
+                            &outcome.written_before,
+                            &editable,
+                        ),
+                    };
+                    let condition = match outcome.family {
+                        super::entailment::ObligationFamily::Bounds
+                        | super::entailment::ObligationFamily::AllocationFit => true,
+                        _ => outcome
+                            .canonical_goal
+                            .as_ref()
+                            .is_some_and(repairs::is_source_relation),
+                    };
+                    let case = repairs::GoalCase {
+                        disposition: repair,
+                        terms: reads.terms,
+                        referenced: reads.referenced,
+                        called: reads.called,
+                        text: &residual,
+                        condition,
+                        function: &function.name,
+                    };
                     Err(CheckStop::source_issue(match outcome.family {
                         super::entailment::ObligationFamily::Bounds => SemanticIssue {
                             rule: SemanticRule::Op4,
                             location,
                             kind: SemanticIssueKind::UndischargedBoundsObligation {
+                                // A subscript a contract clause forms is
+                                // established by an earlier requirement and
+                                // skipped by no guard [FN-8].
+                                mechanical_fix: {
+                                    let constant_offset = matches!(
+                                        function.entailment.obligation_term_reads(outcome).first(),
+                                        Some(super::entailment::TermRead::Constant)
+                                    );
+                                    if self.in_requirement(&outcome.node_path)? {
+                                        repairs::clause_bounds(&case, constant_offset)
+                                    } else {
+                                        repairs::bounds(&case, constant_offset)
+                                    }
+                                },
                                 residual,
-                                mechanical_fix: "when the relation must hold, establish the residual with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise restructure the access",
+                                disposition,
                             },
                             request: None,
                         },
@@ -4292,13 +4274,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             rule: SemanticRule::Op2,
                             location,
                             kind: SemanticIssueKind::UndischargedIntegerDomainObligation {
+                                mechanical_fix: repairs::integer_domain(
+                                    &case,
+                                    outcome
+                                        .canonical_goal
+                                        .as_ref()
+                                        .and_then(repairs::total_forms),
+                                ),
                                 residual,
-                                disposition: if outcome.refuted {
-                                    StaticObligationDisposition::Refuted
-                                } else {
-                                    StaticObligationDisposition::Unproved
-                                },
-                                mechanical_fix: "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic",
+                                disposition,
                             },
                             request: None,
                         },
@@ -4306,43 +4290,103 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             rule: SemanticRule::Op9,
                             location,
                             kind: SemanticIssueKind::UndischargedAllocationFitObligation {
+                                mechanical_fix: repairs::allocation_fit(&case),
                                 residual,
-                                mechanical_fix: "the allocation's own size arithmetic must stay inside u64: bound the count with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when the refusal is intended program behavior; otherwise restructure the allocation",
+                                disposition,
                             },
                             request: None,
                         },
-                        super::entailment::ObligationFamily::ConversionDomain => SemanticIssue {
-                            rule: SemanticRule::Op6,
-                            location,
-                            kind: SemanticIssueKind::UndischargedConversionDomainObligation {
-                                residual,
-                                disposition: if outcome.refuted {
-                                    StaticObligationDisposition::Refuted
-                                } else {
-                                    StaticObligationDisposition::Unproved
-                                },
-                                mechanical_fix: "establish this cvt.defined domain with a verified requirement, an integer range invariant, or explicit finite proof steps; use a dominating cvt.defined condition when refusal is intended behavior, or use cvt.checked to return the failed conversion",
-                            },
-                            request: None,
-                        },
-                        super::entailment::ObligationFamily::CallSeparation
-                        | super::entailment::ObligationFamily::ExchangeSeparation => {
+                        super::entailment::ObligationFamily::ConversionDomain => {
+                            let Some(super::goal::GoalExpression::Operation {
+                                row:
+                                    super::goal::GoalOperation::NumericConversion {
+                                        source,
+                                        destination,
+                                        ..
+                                    },
+                                ..
+                            }) = &outcome.canonical_goal
+                            else {
+                                return Err(SemanticCompilerFailure::InvalidResolution.into());
+                            };
+                            let source_name = self.checked_type_name(source.checked_type())?;
+                            let destination_name =
+                                self.checked_type_name(destination.checked_type())?;
+                            let checked =
+                                format!("cvt.checked::<{source_name}, {destination_name}>");
+                            // An affine invariant bounds an integer operand only.
+                            let integer_source = matches!(
+                                source,
+                                super::model::CheckedNumericType::Integer(_)
+                                    | super::model::CheckedNumericType::GenericInteger(_)
+                            );
+                            let mechanical_fix = repairs::conversion_domain(
+                                &case,
+                                &checked,
+                                &destination_name,
+                                integer_source,
+                            );
                             SemanticIssue {
-                                rule: if outcome.family
-                                    == super::entailment::ObligationFamily::ExchangeSeparation
-                                {
-                                    SemanticRule::Op11
-                                } else {
-                                    SemanticRule::Eff5
-                                },
+                                rule: SemanticRule::Op6,
                                 location,
-                                kind: SemanticIssueKind::UndischargedCallSeparation {
+                                kind: SemanticIssueKind::UndischargedConversionDomainObligation {
+                                    mechanical_fix,
                                     residual,
-                                    mechanical_fix: "prove the two positions distinct before this call, or pass one of them",
+                                    disposition,
                                 },
                                 request: None,
                             }
                         }
+                        super::entailment::ObligationFamily::CallSeparation(query) => {
+                            let separation = function
+                                .call_separations
+                                .get(query as usize)
+                                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                            let live = matches!(
+                                separation.positions.first(),
+                                Some(super::model::CheckedCallSeparationPositions::Live(_))
+                            );
+                            // The facts may already refute the goal, so
+                            // proving it is offered only where it can hold;
+                            // changing what the call passes works either way
+                            // [DIAG-1]. An index beside a window's `next` or
+                            // `free` is separated by being below the window's
+                            // length [WIN-2], not by differing. When one
+                            // argument supplies both entries, the callee's
+                            // row can instead name their common path once.
+                            let mechanical_fix = match (live, separation.one_argument) {
+                                (false, false) => {
+                                    "when the two positions can differ here, prove them distinct before this call; otherwise pass places this call proves do not overlap"
+                                }
+                                (false, true) => {
+                                    "when the two positions can differ here, prove them distinct before this call; otherwise pass positions this call proves distinct, or replace the callee's row entries at or below their common path with one `writes` entry of that path"
+                                }
+                                (true, false) => {
+                                    "when the index can be below the window's length here, prove that before this call; otherwise pass an index this call proves below it"
+                                }
+                                (true, true) => {
+                                    "when the index can be below the window's length here, prove that before this call; otherwise pass an index this call proves below it, or replace the callee's row entries at or below their common path with one `writes` entry of that path"
+                                }
+                            };
+                            SemanticIssue {
+                                rule: SemanticRule::Eff5,
+                                location,
+                                kind: SemanticIssueKind::UndischargedCallSeparation {
+                                    residual,
+                                    mechanical_fix,
+                                },
+                                request: None,
+                            }
+                        }
+                        super::entailment::ObligationFamily::ExchangeSeparation => SemanticIssue {
+                            rule: SemanticRule::Op11,
+                            location,
+                            kind: SemanticIssueKind::UndischargedCallSeparation {
+                                residual,
+                                mechanical_fix: "prove before the `swap` that the two positions are distinct, or exchange places that are equal or disjoint without an ancestor relation",
+                            },
+                            request: None,
+                        },
                         super::entailment::ObligationFamily::ReferencePreservation(query) => {
                             let use_site = function
                                 .call_separations
@@ -4364,8 +4408,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             rule: SemanticRule::Ref4,
                             location,
                             kind: SemanticIssueKind::UndischargedRangeFormationObligation {
+                                mechanical_fix: repairs::range_formation(&case),
                                 residual,
-                                mechanical_fix: "establish lo <= hi and hi <= x.len with a verified requirement, a source invariant, or explicit finite proof steps; otherwise restructure the range",
+                                disposition,
                             },
                             request: None,
                         },
@@ -4395,6 +4440,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     // the checker on the ordinary call-requirement path, so
                     // the rule and the restructuring are selected here rather
                     // than by a second judgment of the same goal.
+                    let (static_disposition, repair) =
+                        dispositions(outcome.disposition == CallGoalDisposition::Refuted);
+                    let reads = repairs::GoalTerms::of_goal(
+                        &outcome.goal.root,
+                        function,
+                        &outcome.written_before,
+                        &self.editable_functions()?,
+                    );
+                    let case = repairs::GoalCase {
+                        disposition: repair,
+                        terms: reads.terms,
+                        referenced: reads.referenced,
+                        called: reads.called,
+                        text: &outcome.rendered_goal,
+                        condition: repairs::is_source_relation(&outcome.goal.root),
+                        function: &function.name,
+                    };
                     if signature.name == "free_empty" {
                         return Err(CheckStop::source_issue(SemanticIssue {
                             rule: SemanticRule::Op14,
@@ -4403,18 +4465,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 self.tree.coordinate(node)?,
                             ),
                             kind: SemanticIssueKind::UndischargedEmptyRunRelease {
+                                mechanical_fix: repairs::empty_run_release(&case),
                                 residual: outcome.rendered_goal.clone(),
-                                mechanical_fix: "empty the window and establish its zero length at this point; otherwise take every element out and consume it",
+                                disposition: static_disposition,
                             },
                             request: None,
                         }));
                     }
                     let requires_clause = self.node_location(&outcome.requires_clause)?;
-                    let mechanical_fix = if first_ephemeral_argument(&outcome.goal.root).is_some() {
-                        "bind that argument or referent value with one preceding ordinary let, establish the entire instantiated requirement over that binding, and pass the binding, borrowing it when the parameter mode requires a borrow"
-                    } else {
-                        "when the call is required to succeed, establish the entire instantiated callee requirement with a verified requirement, a source invariant, or explicit finite proof steps before the call; use a dominating branch only when rejection is intended program behavior; otherwise restructure the call"
-                    };
+                    let mechanical_fix = repairs::call_requirement(&case);
                     Err(CheckStop::source_issue(SemanticIssue {
                         rule: SemanticRule::Fn8,
                         location: SemanticLocation::SourceNode(
@@ -4461,6 +4520,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     ),
                     kind: SemanticIssueKind::NoSelectedNormalExit {
                         residual: "no selected normal exit",
+                        mechanical_fix: repairs::NO_SELECTED_EXIT,
                     },
                     request: None,
                 }));
@@ -4470,16 +4530,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }) else {
                 continue;
             };
-            let disposition = match exit.disposition {
+            let (disposition, repair) = match exit.disposition {
                 super::entailment::PostconditionDisposition::Discharged => {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 }
-                super::entailment::PostconditionDisposition::Refuted => {
-                    crate::PostconditionProofDisposition::Refuted
-                }
-                super::entailment::PostconditionDisposition::Unproved => {
-                    crate::PostconditionProofDisposition::Unproved
-                }
+                super::entailment::PostconditionDisposition::Refuted => (
+                    crate::PostconditionProofDisposition::Refuted,
+                    repairs::Disposition::Refuted,
+                ),
+                super::entailment::PostconditionDisposition::Unproved => (
+                    crate::PostconditionProofDisposition::Unproved,
+                    repairs::Disposition::Unproved,
+                ),
             };
             let node = self
                 .tree
@@ -4506,11 +4568,66 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         selector: self.node_location(&proof.selector)?,
                         relation: exit.residual.clone(),
                         disposition,
+                        mechanical_fix: repairs::postcondition(
+                            repair,
+                            repairs::returns_call_result(
+                                function,
+                                &exit.statement,
+                                &self.editable_functions()?,
+                            ),
+                        ),
                     },
                 )),
                 request: None,
             }));
         }
         Ok(())
+    }
+}
+
+impl Checker<'_, '_, '_, '_> {
+    /// [FN-9] the functions whose `ensures` a writer can add to: every one
+    /// but the prelude's.
+    fn editable_functions(&self) -> Result<std::collections::HashSet<FunctionId>, CheckStop> {
+        let mut editable = std::collections::HashSet::new();
+        for signature in &self.signatures {
+            if !self.tree.is_prelude_node(signature.node)? {
+                editable.insert(signature.id);
+            }
+        }
+        Ok(editable)
+    }
+
+    /// Whether a node lies in a `requires_clause` or a `contract_define`,
+    /// whose places a requirement forms at body entry and which evaluate
+    /// nothing [FN-8].
+    fn in_requirement(&self, path: &NodePath) -> Result<bool, CheckStop> {
+        let mut node = self.tree.node_with_path(path);
+        while let Some(current) = node {
+            if matches!(
+                self.tree.production(current)?,
+                Production::RequiresClause | Production::ContractDefine
+            ) {
+                return Ok(true);
+            }
+            node = self.tree.parent(current)?;
+        }
+        Ok(false)
+    }
+}
+
+/// The payload disposition and the repair's disposition of one goal no step
+/// discharged [ENT-4, MSR-4].
+fn dispositions(refuted: bool) -> (StaticObligationDisposition, repairs::Disposition) {
+    if refuted {
+        (
+            StaticObligationDisposition::Refuted,
+            repairs::Disposition::Refuted,
+        )
+    } else {
+        (
+            StaticObligationDisposition::Unproved,
+            repairs::Disposition::Unproved,
+        )
     }
 }

@@ -1,7 +1,7 @@
 # Bounds-check spellings: Rust and Whitefoot
 
-Dated 2026-09-25. This record supports the table in the root README's
-[first example](../../../README.md#a-bounds-check-that-is-proved-away).
+Dated 2026-09-25. This record supports the Rust comparison in the root
+README's [first example](../../../README.md#a-bounds-check-proved-away).
 
 ## Question
 

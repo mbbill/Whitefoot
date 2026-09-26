@@ -824,6 +824,77 @@ pub(crate) fn places_overlap(
     left.root == right.root && paths_overlap(oracle, left, &left.path, &right.path)
 }
 
+/// [EFF-5] whether two places overlap whatever values their index and range
+/// positions take.
+///
+/// This is the ordinary [OWN-7] walk asked with every position question
+/// answered by the values alone: two positions that are not provably the
+/// same value may be distinct, a slot may lie below `r.len` and outside
+/// `r.len - 1` [WIN-2], and a range step against any step other than the
+/// identical range may be empty or lie elsewhere, which no admitted family
+/// answers but some values do. The places overlap at every position exactly
+/// when the walk still finds them overlapping: one is a prefix of the other,
+/// or they first differ at a pair OWN-7 and WIN-2 fix as overlapping, such as
+/// two payload steps naming different variants or a slot against `r.filled`.
+pub(crate) fn overlaps_at_every_position(left: &ResolvedPlace, right: &ResolvedPlace) -> bool {
+    if left.root != right.root {
+        return false;
+    }
+    for (depth, (left_step, right_step)) in left.path.iter().zip(&right.path).enumerate() {
+        let ranged =
+            matches!(left_step, PlaceStep::Range(_)) || matches!(right_step, PlaceStep::Range(_));
+        if ranged {
+            if steps_provably_same(*left_step, *right_step) {
+                continue;
+            }
+            return false;
+        }
+        let window = ResolvedPlace {
+            root: left.root,
+            path: left.path[..depth].to_vec(),
+        };
+        match separation(&EveryPositionSeparable, &window, *left_step, *right_step) {
+            StepSeparation::Separate => return false,
+            StepSeparation::Overlapping => return true,
+            StepSeparation::Same => {}
+        }
+    }
+    true
+}
+
+/// The oracle of [`overlaps_at_every_position`]: every question a position's
+/// value could answer is answered by some values as separating.
+///
+/// It is not a proof oracle and grants no separation to any consumer that
+/// judges one program state; it asks only whether an overlap depends on
+/// position values at all.
+struct EveryPositionSeparable;
+
+impl SeparationOracle for EveryPositionSeparable {
+    fn indices_distinct(&self, left: CapturedValue, right: CapturedValue) -> bool {
+        !left.provably_same(right)
+    }
+
+    fn ranges_disjoint(&self, _left: CapturedRange, _right: CapturedRange) -> bool {
+        true
+    }
+
+    /// Some values of an index lie below `r.len` [WIN-2].
+    fn index_is_live(&self, _window: &ResolvedPlace, _index: CapturedValue) -> bool {
+        true
+    }
+
+    fn index_is_not_last(&self, _window: &ResolvedPlace, _index: CapturedValue) -> bool {
+        true
+    }
+
+    /// The two places are one call's declared paths, both read at its entry
+    /// [WIN-2].
+    fn window_length_is_shared(&self, _window: &ResolvedPlace) -> bool {
+        true
+    }
+}
+
 /// The exact range pair that could separate two otherwise-overlapping paths.
 ///
 /// This follows the ordinary [OWN-7] walk with no proof oracle. A candidate
@@ -1117,6 +1188,24 @@ impl PlaceMap {
         self.summary(binding).is_some_and(|summary| {
             summary.reference || summary.reference_unknown || !summary.reference_paths.is_empty()
         })
+    }
+
+    /// The binding a use of a reference variable reads besides the path it
+    /// names: the variable holds what its formation captured, the range
+    /// endpoints and index values among them, and the `let` that forms it
+    /// or a `set` that rebinds it writes it [REF-1, PAR-1].
+    ///
+    /// A reference parameter that is never rebound names exactly the place
+    /// its own binding stands for, so it has no separate holder, and neither
+    /// has an owned binding. A rebound parameter's binding is both its holder
+    /// and the entry place it names, so reading it overlaps every access
+    /// through the parameter, which denies more than PAR-1 asks. A reference
+    /// whose inventory is unknown is read as well, failing closed.
+    pub(crate) fn reference_holder(&self, binding: BindingId) -> Option<ResolvedPlace> {
+        let summary = self.summary(binding)?;
+        let holder = ResolvedPlace::binding(binding);
+        (summary.reference && summary.reference_paths.as_slice() != std::slice::from_ref(&holder))
+            .then_some(holder)
     }
 
     /// Resolves a written holder and suffix through its complete origin inventory.

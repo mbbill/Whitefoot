@@ -64,14 +64,8 @@ fn fold(node: &Box<Node>) -> result: u64 writes(node) {
 
 fn low_byte(v: u64) -> result: u8 pure {
   let low = iand(v, 255_u64);
-  match cvt.checked::<u64, u8>(low) {
-    Ok(value: byte) => {
-      return byte;
-    }
-    Err(error: problem) => {
-      return 0_u8;
-    }
-  }
+  let byte = cvt::<u64, u8>(low);
+  return byte;
 }
 
 fn spell(destination: &[u8], at: u64, value: u64) -> result: u64 writes(destination) {

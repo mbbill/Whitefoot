@@ -2267,7 +2267,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // which reports the offending result type; anchor it at ordinal
             // zero and let `validate_postcondition_selector` speak.
             [] => Ok(0),
-            _ => self.issue_selector(record, SemanticIssueKind::AmbiguousResultRoute),
+            _ => {
+                // [CALL-4] the repair names the results that could carry the
+                // route, so the writer picks the one it means.
+                let binders = carriers
+                    .iter()
+                    .filter_map(|ordinal| record.result_binders.get(*ordinal))
+                    .map(|binder| format!("`{}`", binder.spelling))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                self.issue_selector(
+                    record,
+                    SemanticIssueKind::AmbiguousResultRoute {
+                        mechanical_fix: format!(
+                            "more than one result can carry this route: name the one it applies to, writing `when r is` before its variant with `r` one of {binders}"
+                        ),
+                    },
+                )
+            }
         }
     }
 
@@ -2561,7 +2578,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<T, CheckStop> {
         // [CALL-4] owns the result ordinal and the route's ambiguity; every
         // other selector rejection is [FN-9]'s admission.
-        let rule = if matches!(kind, SemanticIssueKind::AmbiguousResultRoute) {
+        let rule = if matches!(kind, SemanticIssueKind::AmbiguousResultRoute { .. }) {
             SemanticRule::Call4
         } else {
             SemanticRule::Fn9

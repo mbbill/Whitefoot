@@ -883,9 +883,10 @@ fn set_target_attribution(
     bare_set_targets: &HashMap<usize, NodeId>,
     issue: ResolutionIssue,
 ) -> Result<ResolutionIssue, ResolutionCompilerFailure> {
-    if !matches!(issue.kind, ResolutionIssueKind::UnresolvedUse { .. }) {
-        return Ok(issue);
-    }
+    let spelling = match &issue.kind {
+        ResolutionIssueKind::UnresolvedUse { spelling, .. } => spelling.clone(),
+        _ => return Ok(issue),
+    };
     let Some(place) = bare_set_targets.iter().find_map(|(index, place)| {
         roles
             .get(*index)
@@ -909,7 +910,12 @@ fn set_target_attribution(
             role_ordinal: 0,
             subtoken_ordinal: 0,
         },
-        kind: issue.kind,
+        kind: ResolutionIssueKind::UndeclaredSetTarget {
+            mechanical_fix: format!(
+                "no binding `{spelling}` is in scope, so this `set` declares nothing: write it as `let {spelling} = ...;`, keeping its right-hand side, to declare the binding here, or name a binding that is in scope"
+            ),
+            spelling,
+        },
     })
 }
 

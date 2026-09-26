@@ -1,7 +1,7 @@
 # Parallel quicksort under `--par`
 
 Dated 2026-09-25. This record supports the timing in the root README's
-[second example](../../../README.md#write-sequential-code-get-parallel-results).
+[second example](../../../README.md#sequential-code-parallel-results).
 
 ## Question
 

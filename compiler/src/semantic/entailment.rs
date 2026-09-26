@@ -15,11 +15,10 @@
 //!
 //! Implemented fact sources: S1 branch and match facts with both
 //! comparison-origin shapes, S4 requires facts, S5 binding and post-SET-1
-//! copy/conversion equalities, S6 length facts, S7
-//! constant-offset arithmetic, S9 const-array element ranges, and S10
-//! boundary count facts; the label S8 is retired, not reused [ENT-3]. An
-//! absent source only under-derives, which is the version-monotone
-//! direction [ENT-1].
+//! copy/conversion equalities, S6 length facts, S7 operation facts, S9
+//! const-array element ranges, S11 counted-range facts, and the S12 and S13
+//! call publication sources. An absent source only under-derives, which is
+//! the version-monotone direction [ENT-1].
 
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod affine;
@@ -290,8 +289,9 @@ pub(crate) enum ObligationFamily {
     /// is [REF-4].
     RangeFormation,
     /// Two range steps of a compared pair of paths must be disjoint, by the
-    /// four non-strict orderings [OWN-7] submits under [ENT-6] [EFF-5].
-    CallSeparation,
+    /// four non-strict orderings [OWN-7] submits under [ENT-6] [EFF-5]. The
+    /// number is the query's position in the function's call separations.
+    CallSeparation(u32),
     /// Disjoint positions exclude proper ancestry at an exchange [OP-11].
     ExchangeSeparation,
     /// A REF-2 use depends on this event-site separation query.
@@ -378,6 +378,12 @@ pub(crate) struct ObligationOutcome {
     pub(crate) affine_index_maps: Vec<ProvedAffineIndexMap>,
     /// Adjacent-range images retained only at a discharged VIEW-2 formation.
     pub(crate) range_partitions: Vec<ProvedRangePartition>,
+    /// For an undischarged obligation, every binding at which a kill event
+    /// on some path to its node roots its place, sorted [ENT-5]. A
+    /// requirement over a parameter outside this set still holds at the
+    /// node, which is what its repair reads to offer one [DIAG-1].
+    /// Discharged obligations retain none.
+    pub(crate) written_before: Vec<BindingId>,
 }
 
 /// Exact normalized identity of one obligation query in the function-local
@@ -665,6 +671,12 @@ pub(crate) struct CountedDerivationSet {
 pub(crate) struct LoopInvariantProof {
     pub(crate) base: bool,
     pub(crate) step: Option<bool>,
+    /// The preheader state derives the negation of one of the target's
+    /// bounds, so the base judgment is refuted rather than unproved [MSR-4].
+    pub(crate) base_refuted: bool,
+    /// Some reachable backedge derives the negation of one of the
+    /// next-header target's bounds [MSR-4].
+    pub(crate) step_refuted: bool,
 }
 
 impl LoopInvariantProof {
@@ -759,6 +771,9 @@ pub(crate) struct SourceProofCheck {
     /// A nonempty `use` block is invalid when the specification-defined AUTO
     /// route already proves its outer target from the entering context.
     pub(crate) redundant: bool,
+    /// A blockless target no step discharged whose negation, for one of its
+    /// bounds, the entering context derives [MSR-4].
+    pub(crate) target_refuted: bool,
 }
 
 impl SourceProofCheck {
@@ -827,64 +842,6 @@ impl SourceProofOutcome {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct JoinedSourceProofProvenance {
     pub(crate) predecessors: Box<[SourceAffineFactRef]>,
-}
-
-/// The exact written mathematical-one identity admitted by S7. Generic
-/// numeric identities and const-generic values deliberately have no member.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum ShiftOneIdentity {
-    TypedLiteral { source: NodePath },
-    NamedConstant { declaration: DeclarationId },
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum S7DerivationKind {
-    BitAndBound {
-        operand: u8,
-        admitted: TermId,
-    },
-    ShiftOneNonzero {
-        count_atom: NodePath,
-        one: ShiftOneIdentity,
-    },
-    UnsignedRemainderBound {
-        divisor: TermId,
-    },
-    UnsignedDivisionBound {
-        dividend: TermId,
-        divisor: TermId,
-    },
-    SignedRemainderBound {
-        divisor: i128,
-        endpoint: RemainderEndpoint,
-    },
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum RemainderEndpoint {
-    Minimum,
-    Maximum,
-}
-
-/// The value one retained S7 image was established on: a `let` binder, a
-/// `set` commit value, or a checked conversion's conditional payload.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum S7Subject {
-    Binding(BindingId),
-    Commit(NodePath),
-    ResultPayload(TermId),
-}
-
-/// One required unused-or-consumed S7 source root.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct S7Derivation {
-    pub(crate) source: NodePath,
-    pub(crate) row: IntegerType,
-    pub(crate) subject: S7Subject,
-    pub(crate) kind: S7DerivationKind,
-    pub(crate) relation: state::Relation,
-    pub(crate) event: state::FlowEventId,
-    pub(crate) parent: DerivationId,
 }
 
 /// The complete and exclusive FN-9 relation-query disposition.
@@ -1098,6 +1055,10 @@ pub(crate) struct CallGoalOutcome {
     /// One exact positive or contradiction root for a discharged call.
     /// Refuted and unproved calls carry none.
     pub(crate) derivation: Option<DerivationId>,
+    /// For a call no step discharged, every binding at which a kill event on
+    /// some path to the call roots its place, sorted [ENT-5], as
+    /// [`ObligationOutcome::written_before`] records it.
+    pub(crate) written_before: Vec<BindingId>,
 }
 
 /// One retained declaration-only [FN-4] implication result. Its enclosing
@@ -1145,9 +1106,6 @@ pub(crate) struct FunctionEntailment {
     /// Diagnostic-only DAG nodes introduced when equal source-proof facts
     /// meet at structural joins. Dense ordinals are function-local.
     pub(crate) joined_source_proofs: Vec<JoinedSourceProofProvenance>,
-    /// Every admitted S7 relation, in structural source and operand order.
-    /// Each entry owns one required source root.
-    pub(crate) s7_derivations: Vec<S7Derivation>,
     /// One entry per source-ordered FN-9 relation on a concrete function.
     pub(crate) postconditions: Vec<FunctionPostconditionProof>,
     /// O11 candidate decomposition sets recorded at the signed-goal
@@ -1162,6 +1120,70 @@ pub(crate) struct FunctionEntailment {
     /// Canonical term and goal identities moved from the analyzer so every
     /// retained dense ID remains exact and interpretable after analysis.
     pub(crate) inventory: DerivationInventory,
+}
+
+/// What one term of a rejected obligation reads, which is what selects the
+/// routes its repair names [DIAG-1].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TermRead {
+    /// A constant, a const-generic parameter, the zero term, or a measure of
+    /// a named constant.
+    Constant,
+    /// A place, or a measure of one, rooted at this binding and reached by
+    /// field selections and `deref` alone, so a clause can spell it.
+    Binding(BindingId),
+    /// An operand that is no term at all [ENT-2], such as an element read:
+    /// no fact names its value until a `let` binds it.
+    Unnamed,
+    /// A captured, computed, subscripted or compiler-owned value.
+    Computed,
+}
+
+impl FunctionEntailment {
+    /// What each term of one obligation's normalized relations reads, in
+    /// component order. A component without a left term relates an operand
+    /// that is no term [ENT-2], which reads as [`TermRead::Unnamed`].
+    pub(crate) fn obligation_term_reads(&self, outcome: &ObligationOutcome) -> Vec<TermRead> {
+        outcome
+            .components
+            .iter()
+            .flat_map(|component| {
+                [
+                    component
+                        .left
+                        .map_or(TermRead::Unnamed, |term| self.term_read(term)),
+                    self.term_read(component.right),
+                ]
+            })
+            .collect()
+    }
+
+    fn term_read(&self, term: TermId) -> TermRead {
+        let spelled = |place: &super::places::ResolvedPlace| {
+            let steps = place.path.iter().all(|step| {
+                matches!(
+                    step,
+                    super::places::PlaceStep::Field(_) | super::places::PlaceStep::Deref
+                )
+            });
+            match place.root {
+                term::PlaceRoot::Binding(binding) if steps => TermRead::Binding(binding),
+                term::PlaceRoot::Constant(_) if steps => TermRead::Constant,
+                _ => TermRead::Computed,
+            }
+        };
+        match self.inventory.terms.get(term.0 as usize) {
+            Some(
+                term::TermKind::Zero
+                | term::TermKind::Constant(_)
+                | term::TermKind::ConstParameter(..),
+            ) => TermRead::Constant,
+            Some(term::TermKind::Place(place, _) | term::TermKind::Measure(_, place)) => {
+                spelled(place)
+            }
+            _ => TermRead::Computed,
+        }
+    }
 }
 
 /// Computes the combined entailment analysis of one checked function body.

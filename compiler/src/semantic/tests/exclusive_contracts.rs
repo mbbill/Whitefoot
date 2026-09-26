@@ -410,7 +410,7 @@ fn a_boxed_window_publishes_to_the_typed_referent() {
 
 #[test]
 fn two_overlapping_written_arguments_are_refused_pairwise() {
-    // [EFF-5] clause 1: the substituted effects are compared pairwise, and
+    // [EFF-5] clause 1: the effects two arguments supply are compared, and
     // two overlapping paths at least one of which writes are a hard error at
     // the complete `call`. v0.59 spelled the same refusal as a loan conflict
     // between two `&uniq` actuals.

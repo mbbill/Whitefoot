@@ -138,19 +138,12 @@ fn decode_fixed(state: &InflateState, input: &[u8], out: &[u8]) -> result: Resul
     }
     let literal = symbol <= 255_u64;
     if literal {
-      match cvt.checked::<u64, u8>(symbol) {
-        Ok(value: byte) => {
-          match emit_byte(state: state, out: out, value: byte) {
-            Ok(value: emitted) => {
-            }
-            Err(error: emit_error) => {
-              return Err<unit, InflateError>(error: emit_error);
-            }
-          }
+      let byte = cvt::<u64, u8>(symbol);
+      match emit_byte(state: state, out: out, value: byte) {
+        Ok(value: emitted) => {
         }
-        Err(error: conversion_error) => {
-          let error = InflateError::InvalidHuffmanCode();
-          return Err<unit, InflateError>(error: error);
+        Err(error: emit_error) => {
+          return Err<unit, InflateError>(error: emit_error);
         }
       }
     } else {

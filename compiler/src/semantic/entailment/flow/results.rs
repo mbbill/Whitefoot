@@ -226,6 +226,17 @@ impl Analyzer<'_, '_> {
                     &mut None,
                 );
             }
+            // [ENT-5] a checked integer row's success payload is the exact
+            // row's mathematical result, with that row's [ENT-3.S7] facts.
+            CheckedExpression::IntegerOperation { .. } => {
+                self.refresh_result(&mut result, &state.facts);
+                self.establish_checked_payload(
+                    statement,
+                    result.payload,
+                    expression,
+                    &mut result.facts,
+                );
+            }
             _ => {}
         }
         Some(result)

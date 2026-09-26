@@ -14,6 +14,7 @@
 //! at each establishment point.
 
 mod conversions;
+mod operation_facts;
 mod results;
 mod sources;
 
@@ -21,7 +22,7 @@ use super::super::postcondition::PostconditionPlace;
 use results::ResultEvidence;
 use sources::{MeasureCarry, ValueImage};
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::rc::Rc;
 
 use super::super::goal::{
@@ -59,10 +60,10 @@ use super::state::{
     AffinePremiseUse, ClosedState, CountedRootAtom, DerivationId, DerivationInventory,
     DerivationLedger, DerivationNode, DerivationRootKind, FactState, FlowEventId, FlowEventKind,
     GoalId, GoalNormalization, GoalSign, GoalSupport, GoalTable, IndexCaptureSubstitution,
-    IndexSeparationDetail, JoinParent, OutcomeFact, PostconditionCallSubstitution,
-    RangeSeparationDetail, RangeSeparationOrdering, Relation, SourceAffineFactRef,
-    SourceLoopInvariantRef, WordHashMap, close, close_excluding_term, closure_is_seeded,
-    contradiction_without_proofs, join_at, materialize_closure_at, materialize_closure_before_kill,
+    IndexSeparationDetail, JoinParent, PostconditionCallSubstitution, RangeSeparationDetail,
+    RangeSeparationOrdering, Relation, SourceAffineFactRef, SourceLoopInvariantRef, WordHashMap,
+    close, close_excluding_term, closure_is_seeded, contradiction_without_proofs, join_at,
+    materialize_closure_at, materialize_closure_before_kill,
 };
 use super::term::{
     CountedCaptureSide, MeasureBound, MeasurePlacement, PlaceRoot, TermId, TermKind, TermTable,
@@ -74,9 +75,8 @@ use super::{
     FunctionPostconditionProof, JoinedSourceProofProvenance, LoopInvariantOutcome,
     LoopInvariantProof, ObligationFamily, ObligationOutcome, PostconditionAggregate,
     PostconditionDisposition, PostconditionEntryImage, PostconditionEntryImageOutcome,
-    PostconditionExit, S7Derivation, SourceProofCertificateFailure, SourceProofCheck,
-    SourceProofOutcome, VerifiedPostconditionSummaryRef, fragment_type,
-    overflow_conjuncts_for_values,
+    PostconditionExit, SourceProofCertificateFailure, SourceProofCheck, SourceProofOutcome,
+    VerifiedPostconditionSummaryRef, fragment_type, overflow_conjuncts_for_values,
 };
 
 /// One [ENT-5] kill event gathered from a statement or expression.
@@ -123,6 +123,21 @@ impl KillEvent {
             | Self::EntryImageHolderWrite { source, .. } => source,
         }
     }
+
+    /// The binding the event's place is rooted at; a constant root has none.
+    fn root_binding(&self) -> Option<BindingId> {
+        match self {
+            Self::Write { place, .. } | Self::EntryImageHolderWrite { place, .. } => {
+                match place.root {
+                    PlaceRoot::Binding(binding) => Some(binding),
+                    PlaceRoot::Constant(_) => None,
+                }
+            }
+            Self::Consume { binding, .. } | Self::EntryImageHolderConsume { binding, .. } => {
+                Some(*binding)
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -155,14 +170,14 @@ struct LoopFrame {
 
 /// The [ENT-3] facts one `match` scrutinee admits at its arms' entries: the
 /// S1 comparison relation, taken positively on `True()` and exactly negated
-/// on `False()`, and the S7/S10 fact one named arm's value binder gains,
-/// carried with that arm's tag. Every other arm establishes nothing.
+/// on `False()`. Every other arm establishes nothing of its own; an `Ok`
+/// arm's success facts arrive through the scrutinee's conditional Result
+/// context [ENT-5].
 #[derive(Default)]
 struct ArmFacts {
     node_path: Option<crate::NodePath>,
     comparison: Option<Relation>,
     goals: Vec<GoalId>,
-    outcome: Option<(u32, OutcomeFact)>,
 }
 
 /// A value initializer collecting give-edge states for its continuation.
@@ -221,11 +236,37 @@ struct ProofFlowState {
     /// Exact integer value images and active source-proved loop invariants.
     /// Executing a statement computes the runtime value represented here.
     affine: AffineFlowState,
+    /// [DIAG-1] every binding at which a kill event on some path to this edge
+    /// roots its place [ENT-5]. It branches and joins with the rest of the
+    /// state, so a write in one arm of a conditional is no write in a
+    /// sibling arm, and a loop header carries every continuing kill of its
+    /// body before the body is walked. A failed judgment retains it so that
+    /// its repair offers a `requires` only over parameters that still hold
+    /// their entry values where the goal is asked.
+    written: BTreeSet<BindingId>,
     /// The kill events applied on this path since the innermost enclosing
     /// loop head, kept only where debug assertions are on: at the loop's back
     /// edge every one must be an event of the summary its head subtracted
     /// [ENT-5].
     continuing: Vec<KillEvent>,
+}
+
+impl ProofFlowState {
+    /// Records on this edge the bindings these events root their places at.
+    fn record_writes(&mut self, events: &[KillEvent]) {
+        self.written
+            .extend(events.iter().filter_map(KillEvent::root_binding));
+    }
+
+    /// What a judgment recorded at this edge retains of [`Self::written`]:
+    /// all of it when the judgment failed, and nothing when it succeeded.
+    fn written_before(&self, discharged: bool) -> Vec<BindingId> {
+        if discharged {
+            Vec::new()
+        } else {
+            self.written.iter().copied().collect()
+        }
+    }
 }
 
 /// Adds `events` to a path's continuing record, each once.
@@ -243,6 +284,10 @@ struct AffineFlowState {
     /// Current measure images belong to this control-flow edge. Queries mint
     /// images lazily, but cloning a predecessor isolates its later kills.
     measure_atoms: RefCell<WordHashMap<TermId, AffineForm>>,
+    /// Each range formation's endpoint images [REF-4], filed under its start
+    /// endpoint's source occurrence, which names that one formation. Nothing
+    /// is filed under a capture naming no single evaluation, so one
+    /// formation's image never answers for another's [OWN-7, ENT-3.S6].
     ranges: WordHashMap<CaptureId, AffineRangeImage>,
     indices: WordHashMap<CaptureId, AffineForm>,
     /// One atom standing for the whole value of a binding whose image is not
@@ -479,6 +524,15 @@ enum ProofDisposition {
     Unknown,
 }
 
+/// [MSR-4] the disposition of one [INV-1] target, which no Goal identity
+/// carries: refuted when the state derives the negation of one of its bounds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TargetDisposition {
+    Proved,
+    Refuted,
+    Unproved,
+}
+
 /// Complete route selected by one [`Analyzer::prove`] call.  The signed
 /// ordinary route retains every simultaneously available finite ground so
 /// FN-8 can preserve its existing evidence payload without running a second
@@ -504,8 +558,9 @@ struct ProofResult {
     numeric_upper_bound: Option<ProvedNumericUpperBound>,
     /// The interval [ENT-6]'s fixed interval-product rule proved for an
     /// admitted non-constant multiplication. Carried out of the judgment so
-    /// [ENT-3.S14] publishes exactly the measurement the domain decision
-    /// consumed, rather than proving the same endpoints a second time.
+    /// [ENT-3.S7]'s multiplication row publishes exactly the measurement the
+    /// domain decision consumed, rather than proving the same endpoints a
+    /// second time.
     product_interval: Option<AffineProductInterval>,
 }
 
@@ -1012,7 +1067,6 @@ fn analyze_candidate_inner(
         loop_invariants: run.loop_invariants,
         source_proofs: run.source_proofs,
         joined_source_proofs: run.joined_source_proofs,
-        s7_derivations: run.s7_derivations,
         postconditions: run.postconditions,
         boolean_decompositions: run.boolean_decompositions,
         permission_separations: run.permission_separations,
@@ -1029,7 +1083,6 @@ struct AnalysisRun {
     loop_invariants: Vec<LoopInvariantOutcome>,
     source_proofs: Vec<SourceProofOutcome>,
     joined_source_proofs: Vec<JoinedSourceProofProvenance>,
-    s7_derivations: Vec<S7Derivation>,
     postconditions: Vec<super::FunctionPostconditionProof>,
     boolean_decompositions: Vec<super::BooleanGoalDecomposition>,
     permission_separations: Vec<PermissionSeparationProof>,
@@ -1113,7 +1166,6 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         loop_invariants: analyzer.loop_invariants,
         source_proofs: analyzer.source_proofs,
         joined_source_proofs: analyzer.joined_source_proofs,
-        s7_derivations: analyzer.s7_derivations,
         postconditions: analyzer.postconditions,
         boolean_decompositions: analyzer.boolean_decompositions,
         permission_separations,
@@ -1155,7 +1207,6 @@ impl<'check, 'unit> Analyzer<'check, 'unit> {
             source_proofs: Vec::new(),
             joined_source_proofs: Vec::new(),
             invariant_targets: HashMap::new(),
-            s7_derivations: Vec::new(),
             postconditions: Vec::new(),
             boolean_decompositions: Vec::new(),
             entry_images: Vec::new(),
@@ -1240,18 +1291,6 @@ pub(super) fn finish(entailment: &mut FunctionEntailment) {
     }
     for counted in &mut entailment.counted_derivations {
         remap_counted_derivations(counted, &remap.nodes);
-    }
-    for source in &mut entailment.s7_derivations {
-        source.parent = remap
-            .nodes
-            .get(source.parent.0 as usize)
-            .copied()
-            .flatten()
-            .expect("required S7 source root retained by the sole ledger root channel");
-        source.event = entailment
-            .derivations
-            .node_event(source.parent)
-            .expect("S7 source parent retains its shared structural event");
     }
     for postcondition in &mut entailment.postconditions {
         remap_postcondition(postcondition, &remap.nodes, &remap.events);
@@ -1496,11 +1535,12 @@ struct Analyzer<'check, 'unit> {
     derivations: DerivationLedger,
     obligations: Vec<ObligationOutcome>,
     /// The interval [ENT-6]'s interval-product rule proved at each admitted
-    /// non-constant multiplication, keyed by that operation's own node. The
-    /// domain is judged while the initializer is walked and [ENT-3.S14]
-    /// establishes at the binding the walk then reaches, so the measurement
-    /// waits here between the two rather than being proved again.
-    product_intervals: HashMap<crate::NodePath, AffineProductInterval>,
+    /// non-constant multiplication, with that domain's derivation, keyed by
+    /// that operation's own node. The domain is judged while the initializer
+    /// is walked and [ENT-3.S7]'s multiplication row establishes at the
+    /// binding the walk then reaches, so the measurement waits here between
+    /// the two rather than being proved again.
+    product_intervals: HashMap<crate::NodePath, (AffineProductInterval, Option<DerivationId>)>,
     /// Which exact multiplications discharged their [OP-2] domain over affine
     /// operand images, keyed by the operation's own node. Read once at the
     /// binding the walk then reaches, exactly as the interval above is. It
@@ -1536,7 +1576,6 @@ struct Analyzer<'check, 'unit> {
     /// proposition even on a path where that proposition is unavailable;
     /// availability is checked later as an independent premise judgment.
     invariant_targets: HashMap<crate::DeclarationId, Result<AffineInequality, AffineCheckError>>,
-    s7_derivations: Vec<S7Derivation>,
     postconditions: Vec<super::FunctionPostconditionProof>,
     /// O11 candidate decomposition sets, recorded at
     /// signed-goal establishments and never established as facts.
@@ -3885,30 +3924,6 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    fn retain_s7_derivation(&mut self, source: S7Derivation) {
-        let occurrence = u32::try_from(self.s7_derivations.len())
-            .expect("S7 source roots exceed the u32 identity space");
-        let kind = match &source.kind {
-            super::S7DerivationKind::BitAndBound { .. } => {
-                DerivationRootKind::BitAndBound(occurrence)
-            }
-            super::S7DerivationKind::ShiftOneNonzero { .. } => {
-                DerivationRootKind::ShiftOneNonzero(occurrence)
-            }
-            super::S7DerivationKind::UnsignedDivisionBound { .. } => {
-                DerivationRootKind::UnsignedDivisionBound(occurrence)
-            }
-            super::S7DerivationKind::UnsignedRemainderBound { .. } => {
-                DerivationRootKind::UnsignedRemainderBound(occurrence)
-            }
-            super::S7DerivationKind::SignedRemainderBound { .. } => {
-                DerivationRootKind::SignedRemainderBound(occurrence)
-            }
-        };
-        self.derivations.add_root(kind, source.parent);
-        self.s7_derivations.push(source);
-    }
-
     fn retain_counted_derivations(&mut self, occurrence: u32, counted: CountedDerivationSet) {
         assert_eq!(
             occurrence, self.completed_counted_roots,
@@ -4639,8 +4654,11 @@ impl Analyzer<'_, '_> {
 
     /// One batch of kill events on the path components after the Result
     /// states: the facts, the affine images and the entry images, in that
-    /// order. Every kill transfer applies its events through here, so a new
-    /// path component joins every one of them at once.
+    /// order, and the path's record of written bindings [DIAG-1]. Every kill
+    /// transfer but a loop head's applies its events through here, so a new
+    /// path component joins every one of them at once;
+    /// [`Self::apply_loop_kills`] applies the same components, the written
+    /// record included, from its summary.
     fn kill_path_components(
         &mut self,
         separations: &dyn SeparationOracle,
@@ -4651,6 +4669,7 @@ impl Analyzer<'_, '_> {
         self.apply_kills_one(separations, &mut states.facts, events);
         self.apply_affine_kills(separations, &mut states.affine, events);
         self.invalidate_entry_images(states, separations, events, shared_event);
+        states.record_writes(events);
     }
 
     /// Applies each event on its own and in order, invalidating entry images
@@ -4906,9 +4925,6 @@ impl Analyzer<'_, '_> {
         self.kill_s12_candidates_for_scope(state, &exited);
         state.kill_goals(|goal| self.scope_kills_goal(goal, &exited));
         state.origins.retain(|binding, _| !exited.contains(binding));
-        state
-            .outcomes
-            .retain(|binding, _| !exited.contains(binding));
         state
             .goal_origins
             .retain(|binding, _| !exited.contains(binding));
@@ -6560,6 +6576,29 @@ impl Analyzer<'_, '_> {
         })
     }
 
+    /// Files one [REF-4] formation's endpoint images under its start capture,
+    /// the key every reader of the range-image table looks them up by.
+    ///
+    /// Only a source occurrence names one formation, and the checker gives
+    /// every endpoint the occurrence that evaluated it. An image filed under
+    /// any other capture would answer for every range carrying that capture
+    /// [OWN-7], so nothing is filed for it and no ordering separates it.
+    fn file_range_image(
+        &mut self,
+        carrier: &crate::NodePath,
+        captured: CapturedRange,
+        start: &CheckedExpression,
+        end: &CheckedExpression,
+        affine: &mut AffineFlowState,
+    ) {
+        if !matches!(captured.start.capture, CaptureId::Source(_)) {
+            return;
+        }
+        if let Some(image) = self.range_formation_image(carrier, start, end, affine) {
+            affine.ranges.insert(captured.start.capture, image);
+        }
+    }
+
     /// The immutable length image one [REF-4] formation captured.
     ///
     /// The range-image table is keyed by the formation's original capture
@@ -7139,7 +7178,7 @@ impl Analyzer<'_, '_> {
                             requirement.requires_clause.clone(),
                             goal,
                             arguments.len(),
-                            ProofContext::new(&states.facts, &states.affine),
+                            (ProofContext::new(&states.facts, &states.affine), &*states),
                         );
                         goals_ok &= disposition == CallGoalDisposition::Discharged;
                         if let Some(derivation) = derivation {
@@ -7285,17 +7324,7 @@ impl Analyzer<'_, '_> {
                 // formation by that occurrence [REF-1], so a separation
                 // submitted at a later call reads exactly these two forms and
                 // never re-reads a spelling whose bindings may have moved on.
-                if let Some(image) = self
-                    .affine_expression_form(start, &mut states.affine)
-                    .zip(self.affine_expression_form(end, &mut states.affine))
-                    .map(|(start, end)| AffineRangeImage {
-                        source: carrier.clone(),
-                        start,
-                        end,
-                    })
-                {
-                    states.affine.ranges.insert(captured.start.capture, image);
-                }
+                self.file_range_image(carrier, *captured, start, end, &mut states.affine);
                 let obligation_start = self.obligations.len();
                 let source_subscripts = match source {
                     CheckedRangeSource::Storage(root) => self.judge_place_subscripts(root, states),
@@ -7450,7 +7479,7 @@ impl Analyzer<'_, '_> {
         requires_clause: crate::NodePath,
         goal: ConcreteGoal,
         argument_count: usize,
-        context: ProofContext<'_>,
+        (context, written): (ProofContext<'_>, &ProofFlowState),
     ) -> (CallGoalDisposition, Option<DerivationId>) {
         let (disposition, evidence, derivation) = self.call_goal_disposition(&goal, context);
         let ordinal = u32::try_from(self.call_goals.len())
@@ -7471,6 +7500,7 @@ impl Analyzer<'_, '_> {
             disposition,
             evidence,
             derivation,
+            written_before: written.written_before(disposition == CallGoalDisposition::Discharged),
         });
         (disposition, derivation)
     }
@@ -9089,6 +9119,7 @@ impl Analyzer<'_, '_> {
                 Vec::new()
             },
             range_partitions: Vec::new(),
+            written_before: states.written_before(discharged),
         });
     }
 
@@ -9639,6 +9670,7 @@ impl Analyzer<'_, '_> {
             allocation_length_upper_bound_derivation,
             affine_index_maps: Vec::new(),
             range_partitions: Vec::new(),
+            written_before: states.written_before(discharged),
         });
     }
 
@@ -9694,7 +9726,7 @@ impl Analyzer<'_, '_> {
                     self.prove_index_separation(left, right, state)
                 }
                 CheckedCallSeparationPositions::Ranges(left, right) => {
-                    self.prove_range_separation(left, right, state)
+                    self.prove_range_separation(left, right, &state.facts, &state.affine)
                 }
                 CheckedCallSeparationPositions::Live(index) => separation
                     .window
@@ -9735,7 +9767,9 @@ impl Analyzer<'_, '_> {
             } else if separation.exchange {
                 ObligationFamily::ExchangeSeparation
             } else {
-                ObligationFamily::CallSeparation
+                ObligationFamily::CallSeparation(
+                    u32::try_from(query).expect("call-separation queries exceed u32"),
+                )
             },
             conjunct: 0,
             canonical_goal: None,
@@ -9767,6 +9801,7 @@ impl Analyzer<'_, '_> {
             allocation_length_upper_bound_derivation: None,
             affine_index_maps: Vec::new(),
             range_partitions: Vec::new(),
+            written_before: state.written_before(discharged),
         });
         discharged
     }
@@ -9958,10 +9993,11 @@ impl Analyzer<'_, '_> {
         &mut self,
         left: CapturedRange,
         right: CapturedRange,
-        state: &ProofFlowState,
+        facts: &FactState,
+        affine: &AffineFlowState,
     ) -> Option<ProofResult> {
-        let left_image = state.affine.ranges.get(&left.start.capture)?.clone();
-        let right_image = state.affine.ranges.get(&right.start.capture)?.clone();
+        let left_image = affine.ranges.get(&left.start.capture)?.clone();
+        let right_image = affine.ranges.get(&right.start.capture)?.clone();
         for (ordering, end, start) in [
             (
                 RangeSeparationOrdering::LeftBeforeRight,
@@ -9990,7 +10026,7 @@ impl Analyzer<'_, '_> {
                 continue;
             };
             let mut proof = self.prove(
-                ProofContext::new(&state.facts, &state.affine),
+                ProofContext::new(facts, affine),
                 ProofGoal::Affine {
                     inequality: &inequality,
                     right: None,
@@ -10029,7 +10065,7 @@ impl Analyzer<'_, '_> {
         for index in pending {
             let query = self.permission_separations[index].query.clone();
             let derivation = self
-                .prove_range_separation(query.left, query.right, state)
+                .prove_permission_separation(&query, state)
                 .and_then(|proof| proof.derivation);
             let attempt = &mut self.permission_separations[index];
             attempt.attempted = true;
@@ -10038,6 +10074,66 @@ impl Analyzer<'_, '_> {
                 attempt.derivations.push(derivation);
             }
         }
+    }
+
+    /// One [PAR-1] range question in the state before its first statement.
+    ///
+    /// A range bound before that statement has the image its formation
+    /// published. A range one of the pair's calls forms as an actual has
+    /// none yet, because its formation runs with its call; it names the same
+    /// storage as that range bound immediately before the first statement
+    /// [REF-4], so its endpoints are evaluated here, in a copy of this state,
+    /// into exactly the image such a binding would publish. The planner lists
+    /// a later statement's formation only when nothing before it writes what
+    /// its endpoints read, so these are the values that formation evaluates.
+    /// The copy keeps the atoms this evaluation mints out of the ordinary
+    /// walk and replaces any image an earlier evaluation left under the same
+    /// capture.
+    fn prove_permission_separation(
+        &mut self,
+        query: &PermissionSeparationQuery,
+        state: &ProofFlowState,
+    ) -> Option<ProofResult> {
+        if query.formations.is_empty() {
+            return self.prove_range_separation(
+                query.left,
+                query.right,
+                &state.facts,
+                &state.affine,
+            );
+        }
+        let mut affine = state.affine.clone();
+        for formation in &query.formations {
+            let capture = formation.captured.start.capture;
+            match self.range_formation_image(
+                &formation.carrier,
+                &formation.start,
+                &formation.end,
+                &mut affine,
+            ) {
+                Some(image) => affine.ranges.insert(capture, image),
+                None => affine.ranges.remove(&capture),
+            };
+        }
+        self.prove_range_separation(query.left, query.right, &state.facts, &affine)
+    }
+
+    /// The image one [REF-4] formation publishes: its two endpoints' affine
+    /// forms in `affine`, attached to the formation node.
+    fn range_formation_image(
+        &mut self,
+        carrier: &crate::NodePath,
+        start: &CheckedExpression,
+        end: &CheckedExpression,
+        affine: &mut AffineFlowState,
+    ) -> Option<AffineRangeImage> {
+        self.affine_expression_form(start, affine)
+            .zip(self.affine_expression_form(end, affine))
+            .map(|(start, end)| AffineRangeImage {
+                source: carrier.clone(),
+                start,
+                end,
+            })
     }
 
     fn finalize_permission_separations(&mut self) -> Vec<PermissionSeparationProof> {
@@ -10158,6 +10254,7 @@ impl Analyzer<'_, '_> {
             allocation_length_upper_bound_derivation: None,
             affine_index_maps: Vec::new(),
             range_partitions: Vec::new(),
+            written_before: states.written_before(discharged),
         });
     }
 
@@ -10289,11 +10386,13 @@ impl Analyzer<'_, '_> {
         // must leave nothing behind for the binding to read.
         self.product_intervals.remove(node_path);
         self.product_operands.remove(node_path);
-        // [ENT-3.S14] publishes only what an admitted multiplication proved,
-        // so the interval is retained exactly when this obligation discharged
+        // [ENT-3.S7]'s multiplication row reads the interval-product rule's
+        // intervals only when that rule discharged the domain, so the
+        // interval is retained exactly when this obligation discharged
         // through the interval-product route.
         if discharged && let Some(interval) = outcome.product_interval.clone() {
-            self.product_intervals.insert(node_path.clone(), interval);
+            self.product_intervals
+                .insert(node_path.clone(), (interval, outcome.derivation));
         }
         // That the exact multiplication's domain held, for [PRF-1] to fold a
         // term-scaled premise against. Recorded only when the domain
@@ -10329,6 +10428,7 @@ impl Analyzer<'_, '_> {
             allocation_length_upper_bound_derivation: None,
             affine_index_maps: Vec::new(),
             range_partitions: Vec::new(),
+            written_before: states.written_before(discharged),
         });
     }
 
@@ -10650,10 +10750,11 @@ impl Analyzer<'_, '_> {
                 route: Some(ProofRoute::Affine),
                 derivation: Some(derivation),
                 numeric_upper_bound: None,
-                // [ENT-3.S14] establishes this interval on whatever value the
-                // multiplication binds. It travels with the judgment because
-                // only this route proved it: a domain discharged by the finite
-                // L0 or affine-clause route publishes no product interval.
+                // [ENT-3.S7]'s multiplication row establishes this interval on
+                // whatever value the multiplication binds. It travels with the
+                // judgment because only this route proved it: a domain
+                // discharged by the finite L0 or affine-clause route leaves
+                // that row to read the closed operand intervals instead.
                 product_interval: Some(interval),
             };
         }
@@ -10911,10 +11012,10 @@ impl Analyzer<'_, '_> {
     }
 
     /// The one measurement the fixed interval-product rule performs. The four
-    /// endpoint products decide [ENT-6]'s domain admission and bound
-    /// [ENT-3.S14]'s published interval, so both read this result rather than
-    /// proving the same endpoints twice: the admitted range and the published
-    /// bound then cannot disagree by construction.
+    /// endpoint products decide [ENT-6]'s domain admission and bound the
+    /// interval [ENT-3.S7]'s multiplication row publishes, so both read this
+    /// result rather than proving the same endpoints twice: the admitted
+    /// range and the published bound then cannot disagree by construction.
     fn affine_integer_product_interval(
         &mut self,
         product: &AffineIntegerProduct,
@@ -11830,6 +11931,10 @@ impl Analyzer<'_, '_> {
                 contributing.iter().map(|state| &state.separations),
             ),
             affine: self.join_affine_states(&contributing),
+            written: contributing
+                .iter()
+                .flat_map(|state| state.written.iter().copied())
+                .collect(),
             continuing,
         }
     }
@@ -12028,6 +12133,7 @@ impl Analyzer<'_, '_> {
             // conservative; the normal value-initializer join installs the
             // receiver's value separately.
             affine: AffineFlowState::default(),
+            written: source.written.clone(),
             continuing: Vec::new(),
         };
         // The forward substitution happens above before the ordinary edge
@@ -12711,13 +12817,13 @@ impl Analyzer<'_, '_> {
         ))
     }
 
-    /// Whether every member of one written invariant's batch is proved in
-    /// this state [INV-1]: one inequality, or both bounds of an equality.
+    /// The disposition of one written invariant's batch in this state
+    /// [INV-1]: one inequality, or both bounds of an equality.
     fn prove_affine_relation_batch(
         &mut self,
         relation: &CheckedAffineRelation,
         state: &mut ProofFlowState,
-    ) -> bool {
+    ) -> TargetDisposition {
         let target = self
             .checked_affine_relation_inequality(
                 relation,
@@ -12733,24 +12839,64 @@ impl Analyzer<'_, '_> {
             )
             .map(|partner| partner.ok());
         let right = self.checked_affine_right_term(&relation.right);
-        let mut members = vec![(target, right)];
+        let left = self.checked_affine_right_term(&relation.left);
+        let mut members = vec![(target, right, left)];
         if let Some(partner) = partner {
-            let right = self.checked_affine_right_term(&relation.left);
-            members.push((partner, right));
+            members.push((partner, left, right));
         }
-        members.into_iter().all(|(member, right)| {
-            member.is_some_and(|inequality| {
+        self.affine_target_disposition(&members, &state.facts, &state.affine)
+    }
+
+    /// [MSR-4] the disposition of one [INV-1] target's bounds in one state:
+    /// proved when every bound is, refuted when the state derives the
+    /// negation of one bound, and unproved otherwise. Each member carries its
+    /// bound, that bound's own right-hand term, and the opposite side's term,
+    /// which is the right-hand term of the bound's negation.
+    fn affine_target_disposition(
+        &mut self,
+        members: &[(Option<AffineInequality>, Option<TermId>, Option<TermId>)],
+        facts: &FactState,
+        affine: &AffineFlowState,
+    ) -> TargetDisposition {
+        let proved = members.iter().all(|(member, right, _)| {
+            member.as_ref().is_some_and(|inequality| {
                 self.prove(
-                    ProofContext::new(&state.facts, &state.affine),
+                    ProofContext::new(facts, affine),
                     ProofGoal::Affine {
-                        inequality: &inequality,
-                        right,
+                        inequality,
+                        right: *right,
                     },
                 )
                 .disposition
                     == ProofDisposition::Proved
             })
-        })
+        });
+        if proved {
+            return TargetDisposition::Proved;
+        }
+        // A contradictory state proves every bound, so no negation below is
+        // proved from a contradiction.
+        let refuted = members.iter().any(|(member, _, opposite)| {
+            member
+                .as_ref()
+                .and_then(|inequality| inequality.negated(&mut AffineCheckState::new()).ok())
+                .is_some_and(|negation| {
+                    self.prove(
+                        ProofContext::new(facts, affine),
+                        ProofGoal::Affine {
+                            inequality: &negation,
+                            right: *opposite,
+                        },
+                    )
+                    .disposition
+                        == ProofDisposition::Proved
+                })
+        });
+        if refuted {
+            TargetDisposition::Refuted
+        } else {
+            TargetDisposition::Unproved
+        }
     }
 
     /// INV-1 base is a simultaneous batch: every target is checked against
@@ -12760,7 +12906,7 @@ impl Analyzer<'_, '_> {
         &mut self,
         invariants: &[CheckedLoopInvariant],
         state: &mut ProofFlowState,
-    ) -> Vec<bool> {
+    ) -> Vec<TargetDisposition> {
         invariants
             .iter()
             .map(|invariant| self.prove_affine_relation_batch(&invariant.relation, state))
@@ -12819,8 +12965,8 @@ impl Analyzer<'_, '_> {
         &mut self,
         loop_id: CheckedLoopId,
         invariants: &[CheckedLoopInvariant],
-        base: &[bool],
-        step: &[Option<bool>],
+        base: &[TargetDisposition],
+        step: &[Option<TargetDisposition>],
         counted_binder: Option<BindingId>,
     ) {
         for (index, invariant) in invariants.iter().enumerate() {
@@ -12833,8 +12979,10 @@ impl Analyzer<'_, '_> {
                 backedge_target: self
                     .render_checked_invariant_relation(&invariant.relation, counted_binder),
                 proof: LoopInvariantProof {
-                    base: base[index],
-                    step: step[index],
+                    base: base[index] == TargetDisposition::Proved,
+                    step: step[index].map(|step| step == TargetDisposition::Proved),
+                    base_refuted: base[index] == TargetDisposition::Refuted,
+                    step_refuted: step[index] == Some(TargetDisposition::Refuted),
                 },
             });
         }
@@ -14426,8 +14574,8 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    /// The commit kill of one `set` target, and the goal-origin and outcome
-    /// state a whole-place commit invalidates. One target list's commits are
+    /// The commit kill of one `set` target, and the goal-origin state a
+    /// whole-place commit invalidates. One target list's commits are
     /// exactly this event per target, on the same edge.
     fn collect_target_kill(
         &self,
@@ -14441,7 +14589,6 @@ impl Analyzer<'_, '_> {
             && place.fields.is_empty()
         {
             state.facts.origins.remove(&place.binding);
-            state.facts.outcomes.remove(&place.binding);
         }
     }
 
@@ -15035,6 +15182,18 @@ impl Analyzer<'_, '_> {
                             == ProofDisposition::Proved
                     }));
                 let redundant = !proof.uses.is_empty() && target_proved;
+                // [MSR-4] a blockless target no step discharged is refuted
+                // when the entering context derives the negation of one of
+                // its bounds.
+                let target_refuted =
+                    proof.uses.is_empty() && !target_proved && target_failure.is_none() && {
+                        let mut members = vec![(target.clone(), target_right, partner_right)];
+                        if partner_written {
+                            members.push((partner.clone(), partner_right, target_right));
+                        }
+                        self.affine_target_disposition(&members, &state.facts, &state.affine)
+                            == TargetDisposition::Refuted
+                    };
                 let certificate_sum = if proof.uses.is_empty() || source_failure.is_some() {
                     None
                 } else {
@@ -15116,6 +15275,7 @@ impl Analyzer<'_, '_> {
                     certificate_failure_use_index,
                     residual_failure,
                     redundant,
+                    target_refuted,
                 };
 
                 if let Some(target) = target
@@ -15378,7 +15538,9 @@ impl Analyzer<'_, '_> {
                     self.judge_affine_relation_subscripts(&invariant.relation, state);
                 }
                 let base = self.prove_loop_invariant_bases(invariants, state);
-                let base_batch = base.iter().all(|proved| *proved);
+                let base_batch = base
+                    .iter()
+                    .all(|disposition| *disposition == TargetDisposition::Proved);
 
                 // The generic header starts from the preheader minus every
                 // fact a continuing kill may invalidate. Invariants then add
@@ -15524,7 +15686,9 @@ impl Analyzer<'_, '_> {
                     self.judge_affine_relation_subscripts(&invariant.relation, state);
                 }
                 let base = self.prove_loop_invariant_bases(invariants, state);
-                let base_batch = base.iter().all(|proved| *proved);
+                let base_batch = base
+                    .iter()
+                    .all(|disposition| *disposition == TargetDisposition::Proved);
 
                 let mut kills = LoopKills::default();
                 let body_reaches_head = self.collect_continuing_loop_kills(
@@ -15606,7 +15770,7 @@ impl Analyzer<'_, '_> {
                 // never widens acceptance.
                 let current_binder = body_state.affine.values.get(binder).cloned();
                 if body_falls_through && current_binder.is_none() {
-                    step = vec![Some(false); invariants.len()];
+                    step = vec![Some(TargetDisposition::Unproved); invariants.len()];
                 }
                 if let (true, Some(current_binder)) = (body_falls_through, current_binder) {
                     let next_binder = current_binder
@@ -15659,30 +15823,30 @@ impl Analyzer<'_, '_> {
                             )
                             .map(|partner| partner.ok());
                         let right = self.checked_affine_right_term(&invariant.relation.right);
-                        let mut members = vec![(next_target, right)];
+                        let left = self.checked_affine_right_term(&invariant.relation.left);
+                        let mut members = vec![(next_target, right, left)];
                         if let Some(partner) = next_partner {
-                            let right = self.checked_affine_right_term(&invariant.relation.left);
-                            members.push((partner, right));
+                            members.push((partner, left, right));
                         }
-                        let proved = members.into_iter().all(|(member, right)| {
-                            member.is_some_and(|inequality| {
-                                self.prove(
-                                    ProofContext::new(&body_state.facts, &body_state.affine),
-                                    ProofGoal::Affine {
-                                        inequality: &inequality,
-                                        right,
-                                    },
-                                )
-                                .disposition
-                                    == ProofDisposition::Proved
-                            })
+                        let disposition = self.affine_target_disposition(
+                            &members,
+                            &body_state.facts,
+                            &body_state.affine,
+                        );
+                        // An unrepresentable hidden update fails the step
+                        // without refuting the target it would reach.
+                        step[index] = Some(if hidden_update {
+                            disposition
+                        } else {
+                            TargetDisposition::Unproved
                         });
-                        step[index] = Some(hidden_update && proved);
                     }
                 }
 
                 self.record_loop_invariant_outcomes(*id, invariants, &base, &step, Some(*binder));
-                let step_batch = step.iter().all(|proved| proved.unwrap_or(true));
+                let step_batch = step.iter().all(|disposition| {
+                    disposition.is_none_or(|disposition| disposition == TargetDisposition::Proved)
+                });
                 let export = lower_le_upper && base_batch && step_batch && hidden_update;
                 let frame = self.loops.pop();
                 let mut breaks = frame.map(|frame| frame.breaks).unwrap_or_default();
@@ -15773,17 +15937,7 @@ impl Analyzer<'_, '_> {
         let mut state = entry.clone();
         let s1_event = (!facts.goals.is_empty() || facts.comparison.is_some())
             .then(|| self.proof_event(FlowEventKind::S1, facts.node_path.as_ref()));
-        let outcome_event = facts
-            .outcome
-            .as_ref()
-            .map(|(_, outcome)| outcome.event_kind)
-            .and_then(|kind| {
-                arm.binders
-                    .iter()
-                    .find(|binder| binder.field == 0)
-                    .map(|binder| self.proof_event(kind, Some(&binder.node_path)))
-            });
-        self.establish_arm_entry(arm, facts, &mut state.facts, s1_event, outcome_event);
+        self.establish_arm_entry(arm, facts, &mut state.facts, s1_event);
         // [MSR-3] the payload placement's second half: on the arm whose
         // variant carries the payload, the binder that names it has the
         // measures the payload had before the consume.
@@ -15847,7 +16001,6 @@ impl Analyzer<'_, '_> {
         facts: &ArmFacts,
         state: &mut FactState,
         event: Option<FlowEventId>,
-        outcome_event: Option<FlowEventId>,
     ) {
         if let Some(relation) = &facts.comparison {
             // Bool arms: tag 1 is `True()`, tag 0 is `False()`; the False
@@ -15898,16 +16051,6 @@ impl Analyzer<'_, '_> {
                 );
                 self.record_boolean_decomposition(*goal, GoalSign::Negative, state);
             }
-        }
-        if let Some((tag, outcome)) = &facts.outcome
-            && arm.tag == *tag
-        {
-            self.establish_binder_fact(
-                arm,
-                outcome,
-                state,
-                outcome_event.expect("outcome arm has a shared proof event"),
-            );
         }
     }
 
@@ -16184,9 +16327,6 @@ impl Analyzer<'_, '_> {
             .origins
             .retain(|binding, _| !kills.set_bindings.contains(binding));
         state
-            .outcomes
-            .retain(|binding, _| !kills.set_bindings.contains(binding));
-        state
             .goal_origins
             .retain(|binding, _| !kills.set_bindings.contains(binding));
         state
@@ -16217,6 +16357,7 @@ impl Analyzer<'_, '_> {
         self.kill_result_evidence(states, &kills.events);
         self.apply_loop_kills_one(&separations, &mut states.facts, kills);
         self.apply_affine_kills(&separations, &mut states.affine, &kills.events);
+        states.record_writes(&kills.events);
         let mut groups = kills.entry_image_groups.iter().collect::<Vec<_>>();
         groups.sort_by(|left, right| left.owner.components().cmp(right.owner.components()));
         for group in groups {
@@ -16590,8 +16731,9 @@ impl Analyzer<'_, '_> {
                 ..
             } => {
                 let base = match occurrence {
+                    // [DIAG-1] fixes this spelling for an FN-8 payload.
                     EvaluatedValueOccurrence::CallArgument { argument, .. } => {
-                        format!("<argument #{argument} pre-transfer value>")
+                        format!("argument #{argument} pre-transfer value")
                     }
                     EvaluatedValueOccurrence::ObligationOperand { operand, .. } => {
                         format!("<operand #{operand} evaluated value>")
@@ -17344,13 +17486,12 @@ mod range_argument_kill_tests {
         })
     }
 
-    /// [EFF-5, REF-4, CALL-3] a range formed at a call names the path a bound
-    /// range reference would name, so its projected write kills a measure of
-    /// an element that range may contain and keeps the origin's own measure
-    /// and the range's own measure. Before this path existed, an inline
-    /// actual named no referent and its write killed nothing.
-    #[test]
-    fn an_inline_range_actual_names_its_formation_path_for_kills() {
+    /// Runs `check` on the analyzer of one bodiless function whose binding i
+    /// names the places `reference_origins[i]` lists [REF-1].
+    fn with_analyzer<R>(
+        reference_origins: Vec<Vec<ResolvedPlace>>,
+        check: impl FnOnce(&mut Analyzer<'_, '_>) -> R,
+    ) -> R {
         let constant_ids = HashMap::new();
         let const_parameter_types = HashMap::new();
         let context = EntailmentContext {
@@ -17366,7 +17507,6 @@ mod range_argument_kill_tests {
             verified_postcondition_proofs: &[],
             binding_names: &[],
         };
-        let outer = range(10, 0, 3);
         let function = CheckedFunction {
             formal_hypothesis: false,
             id: crate::semantic::model::FunctionId(0),
@@ -17384,8 +17524,7 @@ mod range_argument_kill_tests {
             requirement_places: Vec::new(),
             postconditions: Vec::new(),
             body: None,
-            // `view` names `origin[0..3]`.
-            reference_origins: vec![Vec::new(), vec![place(vec![PlaceStep::Range(outer)])]],
+            reference_origins,
             body_disposition: Default::default(),
             allocates: false,
             call_separations: Vec::new(),
@@ -17394,7 +17533,61 @@ mod range_argument_kill_tests {
         };
         let mut analyzer = Analyzer::new(&context, &function);
         analyzer.places = PlaceMap::for_function(&function);
+        check(&mut analyzer)
+    }
 
+    /// [OWN-7, REF-4] a range formation's endpoint images are filed only
+    /// under a source occurrence, which names that one formation. Filed under
+    /// the capture that names no single evaluation, one formation's images
+    /// would answer for every range carrying that capture, so such a
+    /// formation files nothing and keeps its own formation's images apart.
+    #[test]
+    fn a_range_image_is_filed_only_under_its_own_formation() {
+        with_analyzer(Vec::new(), |analyzer| {
+            let carrier = crate::NodePath {
+                components: vec![0],
+            };
+            let mut affine = AffineFlowState::default();
+            let shared = CapturedRange {
+                start: CapturedValue::unknown(),
+                end: CapturedValue::unknown(),
+            };
+            analyzer.file_range_image(&carrier, shared, &endpoint(4), &endpoint(4), &mut affine);
+            assert!(
+                affine.ranges.is_empty(),
+                "a capture shared by formations files no image: {:?}",
+                affine.ranges
+            );
+            let own = range(20, 1, 3);
+            analyzer.file_range_image(&carrier, own, &endpoint(1), &endpoint(3), &mut affine);
+            let image = affine
+                .ranges
+                .get(&own.start.capture)
+                .expect("a formation files its images under its own start occurrence");
+            assert_eq!(
+                (&image.start, &image.end),
+                (&AffineForm::constant(1), &AffineForm::constant(3))
+            );
+            assert_eq!(affine.ranges.len(), 1);
+        });
+    }
+
+    /// [EFF-5, REF-4, CALL-3] a range formed at a call names the path a bound
+    /// range reference would name, so its projected write kills a measure of
+    /// an element that range may contain and keeps the origin's own measure
+    /// and the range's own measure. Before this path existed, an inline
+    /// actual named no referent and its write killed nothing.
+    #[test]
+    fn an_inline_range_actual_names_its_formation_path_for_kills() {
+        let outer = range(10, 0, 3);
+        // `view` names `origin[0..3]`.
+        let origins = vec![Vec::new(), vec![place(vec![PlaceStep::Range(outer)])]];
+        with_analyzer(origins, |analyzer| {
+            an_inline_range_actual_kills(analyzer, outer)
+        });
+    }
+
+    fn an_inline_range_actual_kills(analyzer: &mut Analyzer<'_, '_>, outer: CapturedRange) {
         let inner = range(20, 1, 3);
         let direct = formation(storage_source(), inner, 1, 3);
         assert_eq!(
