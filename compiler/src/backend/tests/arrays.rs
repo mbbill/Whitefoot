@@ -56,7 +56,7 @@
 use super::owned_places::retain_calls;
 use super::system::with_ir;
 use super::{compile, compile_and_run, compile_rejection, emitted_function};
-use crate::backend::target::{TargetLayout, TargetLayoutFailure, TargetObject, validate_program};
+use crate::target::{TargetLayout, TargetLayoutFailure, TargetObject, validate_program};
 
 fn invariant_bounded_runtime_allocation(
     construction: &str,

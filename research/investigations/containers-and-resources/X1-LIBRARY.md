@@ -1025,7 +1025,7 @@ added only to discharge its missing relation does not establish that protocol.
 | Pool-indexed B-tree | Materialized vacant nodes can retain empty windows and copied child IDs, avoiding extraction/cleanup problems. Growth relocates materialized node storage and adds ID validation/reuse work. Existing Slab is bounded and its visit is read-only; it is not already this growing node pool. |
 | B+ tree | A copied leaf separator requires copy/clone K; stable IDs to centrally owned keys avoid that bound but add ownership, indirection and separator-refresh protocols. Retain for a concrete scan/identity requirement, without assuming the scalar split generalizes. |
 
-Current [target layout](../../../compiler/src/backend/target.rs) gives both
+Current [target layout](../../../compiler/src/target.rs) gives both
 `Option<Box<Node>>` and `Slots<Box<Node>,1>` 16 bytes; a native nullable pointer
 is 8. Do not charge an extra word to Slots relative to WF Option. Repeated Pair
 fields in Leaf/Branch variants duplicate storage under the current product

@@ -11,72 +11,6 @@ rarely insert at the same place.
 
 ## Numeric conversions and value evidence
 
-- **Finish and qualify the modular incremental design.** The module
-  decisions in the [language](../design/language.md) and
-  [compiler](../design/compiler.md) design trees rest on the
-  [architecture](../research/investigations/modular-compilation/DESIGN.md),
-  [source rules](../research/investigations/modular-compilation/LANGUAGE.md)
-  and [complete specimen](../research/investigations/modular-compilation/demo/README.md);
-  the [build-cost measurements](../research/experiments/modular-build-cost/RESULTS.md)
-  record what the implementation costs. Remaining, each with the measurement
-  or limit that shows it: the later stage of the
-  [composition staging](../research/investigations/modular-compilation/DESIGN.md#composition-staging),
-  persistent formation, lookup, instance, summary and lowering queries inside
-  a composition through module build units, instance units and fact-based
-  entry checks, selected when edit-build measurements show the composition's
-  rerun to limit a current experiment (a build of an edited entry now forms,
-  resolves and type-checks the whole closure and reuses only its proof
-  analyses and unchanged objects: about 350 ms of a 590 to 620 ms body-edit
-  build of a 32-module chain, growing with the program); a cold build without
-  a cache, which checks each module and then the whole closure; the impact report,
-  which finds each further failing body by checking its module again with
-  the earlier ones set aside; ThinLTO's import threshold, which decays along
-  a deep cross-fragment call chain and left the innermost step of the
-  crossing benchmark's runtime-entry copy out of line (no measurable cost
-  there yet; watch for a workload where it shows, and compare import limits
-  or grouping); and an executable runner for entries that take other
-  parameters than `Inputs` or return other results than `ExitStatus` or
-  `unit`, which build only as libraries (`--emit-llvm`). Extract useful cases
-  into formal test ownership as each finer mechanism lands; no daily gate
-  depends on the research probe or specimen. Compare clean/warm verdicts and
-  executables across edits, including changed summary availability with
-  unchanged headers, published-field versus private-field changes, hidden
-  layout/heap changes, rejected import candidates becoming profitable, and
-  failed builds. Measure input-validation I/O, source/proof/planning/
-  backend/link work, runtime quality and peak memory separately on the queue,
-  GrowVector, wfgrep, SHA-256, a generic-heavy consumer and controlled
-  dependency scaling; an exploratory run found source checking and runtime
-  construction ahead of LLVM work at current sizes. A source module is not a
-  compulsory body/proof/object unit. Benefit: independently verified modules
-  for large projects and parallel architect/implementer agents without losing
-  runtime optimization; persistence correctness, LLVM integration cost and real
-  build/runtime and collaboration gains remain unverified. Reopen structural
-  choices when a discriminating control or matched workload fails; remove this
-  entry when the complete implementation evidence lands.
-  Defer resolved-public-surface CI reporting until
-  interface query values exist; its benefit is detecting capability/contract
-  changes that a `public` keyword diff misses. Validate same-identity alias
-  renames, retargeting and published or private representation edits before
-  wiring a report, with no additional approval gate. Named specification
-  projections, effect regions, representation-independent model properties
-  and mathematical functions remain deferred: they could keep client source
-  unchanged across representation edits or express algorithmic models, but add
-  abstraction and possibly termination/proof machinery. Reopen for a type that
-  must publish a quantity without publishing its storage, or a representation
-  migration or contract that makes this cost worthwhile; compare source edits,
-  invalidation, interface size and proof cost with published fields, retaining
-  deterministic polynomial checking and no runtime proof work. Measure the
-  conservative cross-module component rule on real higher-order code; reopen
-  it if it withholds postconditions that ordinary programs need. A persistent
-  LLVM planning adapter waits for warm-build measurements that show stock
-  ThinLTO planning to be a material share of edit latency. External-package
-  resolution and composition of libraries other than the standard library
-  remain deferred by scope; reopen only when selected by the owner, with
-  package identity/version/renaming cases.
-  Subtree-private independently compiled modules remain unselected; reconsider
-  for a concrete privacy consumer that cannot use one module's private
-  implementation files.
-
 - **Select the modular conversion companion.** The
   [conversion comparison](../research/investigations/numeric-conversions/DESIGN.md#companion-operations-and-explicit-deferrals)
   recommends integer-only `cvt.wrap` for direct low-bit extraction and modular
@@ -357,23 +291,50 @@ rarely insert at the same place.
   a provably disjoint write; close when kill-time separation is implemented and
   qualified or declined on measured cost.
 
-- **Consumers rebuild call-argument referents from expression shape.** The
-  structural checker resolves every actual to its REF-1 places (`actual_paths`,
-  including a formation's range step) and uses them for EFF-5, REF-2 and the
-  EFF-2 projection. The entailment flow (`argument_referents`) and the
-  permission judgments (`argument_places`, PAR-2's range recording) instead
-  rebuild those places from the checked argument expression. A missing
-  expression arm there is silent: inline range actuals once produced no ENT-5
-  kill, and so admitted out-of-bounds reads. Retaining the checker's resolved
-  paths per argument on the checked call and reading them in every consumer
-  would remove the duplicate reconstruction and this defect class, at the cost
-  of a checked-model field and its loop-carried and joined-origin handling,
-  which the flow must still read point-currently. Validate that each consumer
-  reaches its current verdicts on the full corpus with identical kill,
-  permission and ledger results, and that a deliberately removed checker arm
-  fails in one place. Reopen when another argument form is added or another
-  referent omission is found; close when the consumers read one inventory or
-  that inventory is shown unsuitable for point-current flow facts.
+- **Call-argument consumers resolve through the function-wide origin
+  inventory.** The entailment flow (`argument_referents`), the permission
+  judgments (`argument_places`) and the place map now read one exhaustive
+  classification of how an expression names caller storage (`named_place` in
+  `compiler/src/semantic/places.rs`), so a new argument form can no longer be
+  missed by one consumer; dropping its range-formation arm fails five tests
+  across kills, permission and loop permission. They still resolve that place
+  through the function-wide origin inventory, and permission substitutes
+  unknown values for a row's index and range positions, while the structural
+  checker holds each actual's point-current paths and its exact substituted
+  row. `design/compiler/checker-facts.md` records the inventory as an
+  over-approximation, not point-current authority, so reading the checker's
+  facts instead could narrow kills and widen permissions: an acceptance and
+  actualization change, not a refactor. Measure how often the two
+  resolutions differ at calls on the corpus, and what verdicts and
+  permissions change, before proposing it; reopen when a consumer's precision
+  blocks a program or an experiment, and close when that comparison is made
+  and the owner rules on it.
+
+- **The checker/engine acceptance contract is written nowhere.**
+  `entailment_rejection` (`compiler/src/semantic/check.rs`, 567 lines) decides
+  acceptance by listing the engine's outcome lists by hand, maps obligation
+  families to rules twice and selects OP-14 by the callee spelling
+  `free_empty`. A mandatory outcome list added without a matching arm would be
+  accepted. The [architecture investigation](../research/investigations/compiler-architecture/DESIGN.md#f2-rules-implemented-twice-with-nothing-checking-that-they-agree)
+  proposes explicit obligation records, one disposition each and one
+  acceptance query (its P1.3), which `design/compiler/acceptance-records.md`
+  now records. Validate with identical verdicts, rules and locations on the
+  conformance corpus and test programs, and a deliberately dropped
+  disposition that rejects. Close when acceptance is one query over the
+  records.
+
+- **Rules recognized by spelling or implemented twice.** OP-14 is selected
+  by the callee spelling `free_empty` (`compiler/src/semantic/check.rs`) and
+  the backend recognizes OP-11's row by symbol spelling
+  (`compiler/src/backend/emitter.rs`); both hold only because TYPE-6 rejects a
+  source declaration that collides with the prelude. CALL-6's consistency
+  check keeps its own closure (`compiler/src/semantic/check/publication.rs`)
+  beside the ENT-4 closure the specification names, and INV-1 affine formation
+  and call-goal images are each formed in both the checker and the flow.
+  Select by PRE-1 operation identity, route CALL-6 through an isolated
+  ordinary query, and form each image once. Validate with identical verdicts
+  and a prelude-spelled source declaration that still reaches neither path.
+  Reopen when a prelude collision rule changes.
 
 ## Containers and storage lowering
 
@@ -577,7 +538,7 @@ rarely insert at the same place.
 ## Parallel lowering and runtime
 
 - **Validate reuse of selected-target element layouts during emission.**
-  [Zero-stride addressing](../compiler/src/backend/target.rs) currently queries
+  [Zero-stride addressing](../compiler/src/target.rs) currently queries
   the ordinary layout calculator afresh for each element-address step. Repeated
   accesses to a deeply nested nominal element may recompute the same layout.
   Compare checking/emission cost on repeated nested-element accesses before
@@ -913,6 +874,23 @@ rarely insert at the same place.
   comparing published bytes at several worker counts with the sequential
   lowering.
 
+- **Parallel actualization is decided during translation.** A counted-loop
+  split is chosen while its body is being lowered
+  (`compiler/src/lowering/builder/split.rs`). The rescue mechanisms follow
+  from that order: an oversized candidate's finished graph is transferred into
+  its parent with every `IrFunction` field remapped by hand, ordinals are
+  reserved late and the ledger rotates. Offer policy is spread over lowering,
+  a scalar-leaf post-pass, the emitter's lane-fit filter and the launcher, and
+  the clone set is computed three times. Lowering the ordinary graph first and
+  actualizing in one IR-to-IR pass whose plan the emitter only renders (the
+  [architecture investigation](../research/investigations/compiler-architecture/DESIGN.md#p4-lowering-and-backend)'s P4.1) removes
+  the transfer and lowering's use of the target layout. It replaces the
+  graph-transfer decisions in
+  `design/compiler/parallel-lowering/two-worlds.md`, so it needs a ruling.
+  Validate with byte-identical LLVM for `tests/programs` and the `--par` test
+  sources. Reopen when the next parallel-lowering experiment has to change the
+  split.
+
 ## Platforms and host interfaces
 
 - **Upstream LLVM on Darwin does not yet support the selected stack-probe
@@ -1160,6 +1138,74 @@ rarely insert at the same place.
   `wfgrep.wf` now does; reopen when the program is pointed at a larger tree or
   its constant-capacity form stops being the point of the case.
 
+## Modules and libraries
+
+- **Finish and qualify the modular incremental design.** The module
+  decisions in the [language](../design/language.md) and
+  [compiler](../design/compiler.md) design trees rest on the
+  [architecture](../research/investigations/modular-compilation/DESIGN.md),
+  [source rules](../research/investigations/modular-compilation/LANGUAGE.md)
+  and [complete specimen](../research/investigations/modular-compilation/demo/README.md);
+  the [build-cost measurements](../research/experiments/modular-build-cost/RESULTS.md)
+  record what the implementation costs. Remaining, each with the measurement
+  or limit that shows it: the later stage of the
+  [composition staging](../research/investigations/modular-compilation/DESIGN.md#composition-staging),
+  persistent formation, lookup, instance, summary and lowering queries inside
+  a composition through module build units, instance units and fact-based
+  entry checks, selected when edit-build measurements show the composition's
+  rerun to limit a current experiment (a build of an edited entry now forms,
+  resolves and type-checks the whole closure and reuses only its proof
+  analyses and unchanged objects: about 350 ms of a 590 to 620 ms body-edit
+  build of a 32-module chain, growing with the program); a cold build without
+  a cache, which checks each module and then the whole closure; the impact report,
+  which finds each further failing body by checking its module again with
+  the earlier ones set aside; ThinLTO's import threshold, which decays along
+  a deep cross-fragment call chain and left the innermost step of the
+  crossing benchmark's runtime-entry copy out of line (no measurable cost
+  there yet; watch for a workload where it shows, and compare import limits
+  or grouping); and an executable runner for entries that take other
+  parameters than `Inputs` or return other results than `ExitStatus` or
+  `unit`, which build only as libraries (`--emit-llvm`). Extract useful cases
+  into formal test ownership as each finer mechanism lands; no daily gate
+  depends on the research probe or specimen. Compare clean/warm verdicts and
+  executables across edits, including changed summary availability with
+  unchanged headers, published-field versus private-field changes, hidden
+  layout/heap changes, rejected import candidates becoming profitable, and
+  failed builds. Measure input-validation I/O, source/proof/planning/
+  backend/link work, runtime quality and peak memory separately on the queue,
+  GrowVector, wfgrep, SHA-256, a generic-heavy consumer and controlled
+  dependency scaling; an exploratory run found source checking and runtime
+  construction ahead of LLVM work at current sizes. A source module is not a
+  compulsory body/proof/object unit. Benefit: independently verified modules
+  for large projects and parallel architect/implementer agents without losing
+  runtime optimization; persistence correctness, LLVM integration cost and real
+  build/runtime and collaboration gains remain unverified. Reopen structural
+  choices when a discriminating control or matched workload fails; remove this
+  entry when the complete implementation evidence lands.
+  Defer resolved-public-surface CI reporting until
+  interface query values exist; its benefit is detecting capability/contract
+  changes that a `public` keyword diff misses. Validate same-identity alias
+  renames, retargeting and published or private representation edits before
+  wiring a report, with no additional approval gate. Named specification
+  projections, effect regions, representation-independent model properties
+  and mathematical functions remain deferred: they could keep client source
+  unchanged across representation edits or express algorithmic models, but add
+  abstraction and possibly termination/proof machinery. Reopen for a type that
+  must publish a quantity without publishing its storage, or a representation
+  migration or contract that makes this cost worthwhile; compare source edits,
+  invalidation, interface size and proof cost with published fields, retaining
+  deterministic polynomial checking and no runtime proof work. Measure the
+  conservative cross-module component rule on real higher-order code; reopen
+  it if it withholds postconditions that ordinary programs need. A persistent
+  LLVM planning adapter waits for warm-build measurements that show stock
+  ThinLTO planning to be a material share of edit latency. External-package
+  resolution and composition of libraries other than the standard library
+  remain deferred by scope; reopen only when selected by the owner, with
+  package identity/version/renaming cases.
+  Subtree-private independently compiled modules remain unselected; reconsider
+  for a concrete privacy consumer that cannot use one module's private
+  implementation files.
+
 ## Code structure
 
 - **The entailment flow module has outgrown one reader.**
@@ -1169,12 +1215,15 @@ rarely insert at the same place.
   a 1,729-line inline test module) and the tests in
   `compiler/src/semantic/tests/entailment.rs` (10,996 lines, 155 tests) grew
   with it. An agent reads such a file only in slices, and every
-  responsibility's changes land in the same file. The impl already marks eight
-  sections: binding prepass, place resolution and support, terms and relations,
-  kill collection, obligations, statement walk, loop kill summary and canonical
-  rendering. `flow/` already holds `conversions.rs`, `results.rs` and
-  `sources.rs`, split out the same way, so moving each section's methods into
-  its own `flow/` file is a mechanical first step. `state.rs` can move its test
+  responsibility's changes land in the same file. Moving methods into files
+  would not separate its state: child modules take `use super::*` and
+  `pub(super)` methods on the one 37-field `Analyzer`, and the section markers
+  no longer match what they enclose. Split the state first into typed
+  sub-contexts, a vocabulary (terms, goals, ledger, atoms), read-only inputs,
+  outputs and walk frames, then move code along the components the
+  [architecture investigation](../research/investigations/compiler-architecture/DESIGN.md#p2-component-boundaries) lists (its
+  P2.1, which `design/compiler/engine-components.md` now records). `state.rs`
+  can move its test
   module to its own file and its dense-closure algorithms apart from the fact
   state and ledger types; the tests can group by the section they exercise.
   Validate that each move changes no behavior: identical `make check` results
@@ -1195,7 +1244,68 @@ rarely insert at the same place.
   `install_expression_call_requirements`) into `check/goals.rs`. Validate that
   each move changes no behavior: identical `make check` results and a diff of
   moved items and module declarations only. Close when the file is under 4,000
-  lines.
+  lines. The moves keep the one 49-field `Checker`; separating its state into
+  a type context, a declaration inventory and a per-attempt body checker is
+  the [architecture investigation](../research/investigations/compiler-architecture/DESIGN.md#p2-component-boundaries)'s P2.2.
+
+- **LLVM emission writes and then patches text.**
+  `compiler/src/backend/emitter.rs` inserts entry allocas by byte offset and
+  adds the stack-probe attribute by rewriting `define` lines. Which operations
+  open blocks, and so which predecessor a phi names, comes from a hand-kept
+  list (`definition_exit_label`) apart from the code that opens them, and
+  `compiler/src/backend/fragments.rs` re-parses the finished text to split it.
+  A structured function model printed once (the
+  [architecture investigation](../research/investigations/compiler-architecture/DESIGN.md#p4-lowering-and-backend)'s P4.2, a design
+  amendment) records exit labels, places allocas and cuts fragments from the
+  model. Validate with byte-identical output, which keeps the backend tests'
+  substring checks as the net. Reopen when an operation that opens blocks is
+  added.
+
+- **Machinery with no remaining consumer.** The checker keeps the region
+  machinery STOR-8 retired, though every value it produces is empty:
+  `compiler/src/semantic/check/type_regions.rs`, the `region_parameters` of
+  function and nominal templates (always created empty), the
+  `elided_store_brand` cell, `CheckedNominalKind::Box`'s `region` field, a
+  call's `goal_regions` and a `CheckedReleaseClass` with one variant; lowering
+  now asserts that the first two are empty and ignores the rest. The flow's
+  `is_holder` returns `false`, so `EntryImageHolderConsume` is unreachable, and
+  `driver::check_module` has no caller. Finalize checks every parsed node
+  against its production again, the re-verification `design/compiler.md`
+  refuses. By reading, generic validation never takes its early return,
+  because the prelude's generic signatures are templates in every bundle, so
+  every nongeneric body is checked structurally twice; the cost is not
+  measured. Remove each with no behavior change (identical verdicts and LLVM),
+  timing the double check before and after. Close when each is removed or kept
+  with a stated consumer.
+
+- **Native construction lives in the CLI and repeats in the harnesses.**
+  The runtime-unit inventory, object caches, LTO flags and linking live in
+  `compiler/src/bin/whitefootc.rs`; `compiler/tests/support/mod.rs` keeps a
+  second unit inventory with different staged names, the program and
+  conformance harnesses link on their own, and `compiler/Makefile` holds a
+  third list. `lib.rs` re-exports modules by glob, so no public item is ever
+  reported unused, and the driver's fifteen entry points come in cached and
+  uncached twins that drop options: `--graph --check` without `--entry`
+  ignores `--cache`. `--no-overlap` now selects the default lowering while its
+  help text says the default actualizes completion I/O. One library module for
+  native construction and one request type (the
+  [architecture investigation](../research/investigations/compiler-architecture/DESIGN.md#p5-driver-and-api)'s P5.1 and P5.2)
+  remove the copies. Validate with identical executables and verdicts from the
+  CLI and every harness. Reopen when a runtime unit or entry point is
+  added.
+
+- **The checker reads raw syntax.** The checker makes 522 `self.tree` calls
+  and 443 `Production::` matches, learning which alternative was written by
+  probing children; the if/else split is decoded from brace offsets in both
+  `compiler/src/resolution/scopes.rs` and `compiler/src/semantic/tree.rs`; and
+  the checker joins resolution records by linear scans comparing
+  `(role, NodePath)` (`compiler/src/semantic/check/support.rs`). Per-node
+  indexes published by resolution (the
+  [architecture investigation](../research/investigations/compiler-architecture/DESIGN.md#p3-identity-and-ownership)'s P3.1) remove
+  the scans without test changes; a typed syntax access layer (P3.4, a design
+  amendment) confines each grammar amendment to one place. Validate with
+  identical verdicts, timing resolution and checking before and after the
+  indexes. Reopen with the next grammar amendment.
 
 ## Open language questions
 

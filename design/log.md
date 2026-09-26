@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-26 Record incremental gate builds, acceptance records and engine components
+
+Nodes: compiler/verification, compiler/acceptance-records, compiler/engine-components, compiler/incremental-compilation
+
+Owner-approved: After the handoff for PR #128 at 7271a131, whose decision cards 1 to 3 presented the compiler-incremental-gate, compiler-acceptance-records and compiler-engine-components amendments, linked their files and recommended approving each, the owner approved all four of that handoff's cards on 2026-09-26.
+
+Summary: compiler/verification gains the decision that local builds of the gate profile compile incrementally while hosted CI builds it with incremental compilation off, for the measured edit latency and the cost incremental state adds to a fresh checkout. The new compiler/acceptance-records node records that the checker forms every mandatory obligation as a record the engine answers, and that a function is accepted exactly when every record is discharged, failing closed. The new compiler/engine-components node records dividing the flow's analyzer along its writers into typed sub-contexts and then modules, keeping the one prove dispatcher, the one ledger, the walker's event order and the fact states single. The same handoff's fourth card accepted that P1.1 shares only the classification of how an expression names caller storage; whether the consumers read the checker's point-current call facts stays open in docs/todo.md. The measurements and findings are in research/investigations/compiler-architecture/DESIGN.md. Remove the three accepted amendments and the amendment directory. This entry also names compiler/incremental-compilation, which the same PR changed under the ruling of the entry below, so that the newest entry names every node the PR changes.
+
 ## 2026-09-25 Keep the standard library in lib/std and move the containers into it
 
 Nodes: language/standard-library, language/name-resolution, language/system-interface/declaration-home
@@ -12,6 +20,14 @@ Nodes: language/standard-library, language/name-resolution, language/system-inte
 Owner-approved: After the handoff for PR #129 at 5373afcc, whose first decision card showed the standard-library amendment (the library's source in lib/std, embedded in the compiler; the containers as std::collections) with its reasons in Chinese, the owner approved that card.
 
 Summary: Add the amendment's two decisions and its rejected alternative to language/standard-library unchanged: the standard library's source lives in lib/std as one package with its own graph and the compiler carries its records from its own build, so a program is always checked against the library its compiler ships, and the container libraries become the library's first Whitefoot modules under std::collections, because a module program can reach no source outside its package root and binding other packages stays deferred. Remove the accepted amendment. The other nodes named here are unchanged by this entry and carry the earlier ruling below; they are listed because this PR changes them. The same handoff's second card asked whether std::process keeps Inputs beside ExitStatus, which makes a program that names only ExitStatus read the std::io, std::text and std::fs interfaces; the owner chose to keep that layout and fix the checker's nominal passes instead, which changes no node. This ruling does not authorize a merge.
+
+## 2026-09-25 Build the owned representation before composition queries
+
+Nodes: compiler/incremental-compilation
+
+Owner-approved: After the handoff for PR #128 at cb418781, which summarized the compiler-composition-staging amendment in a decision card, linked its file and recommended approving it, the owner agreed to all of that handoff's recommendations, this approval among them.
+
+Summary: Replace the first compiler/incremental-compilation decision so that the representation finer composition queries need, owned syntax, declaration keys minted by resolution and an owned checked program that holds no borrow of the resolved unit, is built now, module build units follow it, and instance units and fact-based entry checks wait for an edit-build measurement or a consumer. The owner said the earlier deferral weighed build cost only; the [compiler-architecture investigation](../research/investigations/compiler-architecture/DESIGN.md#f3-identity-is-positional-and-borrowed) records the structural grounds, and the standard library on modules needs a library module checked once and reused by every program that names it. The replaced decision joins the node's rejected list; its query families, identity rules, whole-closure rerun and refusal of hash-selected reuse remain in force. Remove the resolved amendment and its directory.
 
 ## 2026-09-25 Move the host declarations into a standard library
 

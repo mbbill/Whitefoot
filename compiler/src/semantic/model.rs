@@ -2967,3 +2967,244 @@ pub(crate) fn expression_children(expression: &CheckedExpression) -> Vec<&Checke
         | CheckedExpression::ConstructEnum { fields, .. } => fields.iter().collect(),
     }
 }
+
+/// One call a checked body makes: its callee and the call's node path.
+#[derive(Clone)]
+pub(crate) struct MentionedCall {
+    pub(crate) callee: FunctionId,
+    pub(crate) path: NodePath,
+}
+
+/// What one checked function's own layout and body name: the type of each
+/// parameter, of the result and of every value the body evaluates, binds or
+/// releases, the interned elements its range places read, and every call it
+/// makes. The [STOR-8] heap judgment and lowering's executable inventory read
+/// the same walk.
+#[derive(Default)]
+pub(crate) struct FunctionMentions {
+    pub(crate) types: Vec<CheckedType>,
+    pub(crate) elements: Vec<CheckedElement>,
+    pub(crate) calls: Vec<MentionedCall>,
+}
+
+impl FunctionMentions {
+    pub(crate) fn collect(function: &CheckedFunction) -> Self {
+        let mut dependencies = Self::default();
+        dependencies.types.push(function.result);
+        dependencies
+            .types
+            .extend(function.parameters.iter().map(|parameter| parameter.ty));
+        if matches!(function.body_disposition, CheckedBodyDisposition::Inhabited) {
+            dependencies.statements(function.body.as_deref().unwrap_or_default());
+        }
+        dependencies
+    }
+
+    fn statements(&mut self, statements: &[CheckedStatement]) {
+        for statement in statements {
+            match statement {
+                CheckedStatement::Let { value, .. }
+                | CheckedStatement::Evaluate { value, .. }
+                | CheckedStatement::DropExpression { value, .. } => self.expression(value),
+                CheckedStatement::DestructuringLet {
+                    bindings,
+                    nominal,
+                    value,
+                    ..
+                } => {
+                    self.types.push(CheckedType::Nominal(*nominal));
+                    self.types.extend(bindings.iter().map(|(_, ty, _)| *ty));
+                    self.expression(value);
+                }
+                CheckedStatement::PropagateLet {
+                    scrutinee,
+                    result_nominal,
+                    return_nominal,
+                    ok_type,
+                    error_type,
+                    error_drops,
+                    ..
+                } => {
+                    self.types.extend([
+                        CheckedType::Nominal(*result_nominal),
+                        CheckedType::Nominal(*return_nominal),
+                        *ok_type,
+                        *error_type,
+                    ]);
+                    self.types.extend(error_drops.iter().map(|drop| drop.ty));
+                    self.expression(scrutinee);
+                }
+                CheckedStatement::Set { target, value, .. } => {
+                    self.target(target);
+                    self.expression(value);
+                }
+                CheckedStatement::Proof(_) => {}
+                CheckedStatement::Return { value, drops, .. }
+                | CheckedStatement::Give { value, drops, .. } => {
+                    self.expression(value);
+                    self.types.extend(drops.iter().map(|drop| drop.ty));
+                }
+                CheckedStatement::Match {
+                    scrutinee,
+                    enum_type,
+                    arms,
+                    ..
+                }
+                | CheckedStatement::ValueMatchLet {
+                    scrutinee,
+                    enum_type,
+                    arms,
+                    ..
+                } => {
+                    if let CheckedStatement::ValueMatchLet {
+                        result_type,
+                        result_range_element,
+                        ..
+                    } = statement
+                    {
+                        self.types.push(*result_type);
+                        self.elements.extend(result_range_element.iter().copied());
+                    }
+                    if let CheckedEnumType::Nominal(nominal) = enum_type {
+                        self.types.push(CheckedType::Nominal(*nominal));
+                    }
+                    self.expression(scrutinee);
+                    for arm in arms {
+                        self.types
+                            .extend(arm.binders.iter().map(|binder| binder.ty));
+                        self.types.extend(arm.covered.iter().map(|drop| drop.ty));
+                        self.types
+                            .extend(arm.fallthrough_drops.iter().map(|drop| drop.ty));
+                        self.statements(&arm.body);
+                    }
+                }
+                CheckedStatement::Loop {
+                    body,
+                    backedge_drops,
+                    ..
+                }
+                | CheckedStatement::CountedRange {
+                    body,
+                    backedge_drops,
+                    ..
+                } => {
+                    if let CheckedStatement::CountedRange { lower, upper, .. } = statement {
+                        self.expression(lower);
+                        self.expression(upper);
+                    }
+                    self.types.extend(backedge_drops.iter().map(|drop| drop.ty));
+                    self.statements(body);
+                }
+                CheckedStatement::Break { drops, .. } => {
+                    self.types.extend(drops.iter().map(|drop| drop.ty));
+                }
+            }
+        }
+    }
+
+    fn expression(&mut self, expression: &CheckedExpression) {
+        self.types.push(expression.ty());
+        match expression {
+            CheckedExpression::UserCall {
+                function,
+                call,
+                goal_regions,
+                ..
+            } => {
+                debug_assert!(
+                    goal_regions.is_empty(),
+                    "[STOR-8] no call carries a region argument"
+                );
+                self.calls.push(MentionedCall {
+                    callee: *function,
+                    path: call.clone(),
+                });
+            }
+            CheckedExpression::BoxDeref { nominal, .. }
+            | CheckedExpression::ProjectValue { nominal, .. } => {
+                self.types.push(CheckedType::Nominal(*nominal));
+            }
+            CheckedExpression::BoxTake { path, cleanup, .. } => {
+                self.steps(path);
+                for action in cleanup {
+                    match action {
+                        CheckedOwnedTakeCleanup::Drop { path, ty } => {
+                            self.types.push(*ty);
+                            self.steps(path);
+                        }
+                        CheckedOwnedTakeCleanup::BoxShell {
+                            path,
+                            nominal,
+                            referent,
+                        } => {
+                            self.types
+                                .extend([CheckedType::Nominal(*nominal), *referent]);
+                            self.steps(path);
+                        }
+                    }
+                }
+            }
+            CheckedExpression::Project { residual_drops, .. } => {
+                self.types.extend(residual_drops.iter().map(|drop| drop.ty));
+            }
+            CheckedExpression::ContainerMeasure { root, .. }
+            | CheckedExpression::ReadStorage { root, .. }
+            | CheckedExpression::BorrowAddressed { root, .. } => self.root_types(root),
+            CheckedExpression::BorrowRangeIndex { place, .. }
+            | CheckedExpression::RangeIndex { place, .. } => {
+                self.types.push(place.root.element_type);
+                self.steps(&place.path);
+            }
+            CheckedExpression::RangeElementMeasure { place, .. } => {
+                self.types.push(place.root.element_type);
+                self.types.push(place.ty);
+                self.steps(&place.path);
+            }
+            _ => {}
+        }
+        for child in expression_children(expression) {
+            self.expression(child);
+        }
+    }
+
+    fn target(&mut self, target: &CheckedSetTarget) {
+        self.types.push(target.ty());
+        match target {
+            CheckedSetTarget::Place(_) => {}
+            CheckedSetTarget::RangeIndex(target) => {
+                self.types.push(target.root.element_type);
+                for offset in target.offsets() {
+                    self.expression(offset);
+                }
+                self.steps(&target.path);
+            }
+            CheckedSetTarget::Storage(root) => {
+                self.root_types(root);
+                for offset in root.offsets() {
+                    self.expression(offset);
+                }
+            }
+        }
+    }
+
+    fn root_types(&mut self, root: &CheckedContainerRoot) {
+        self.types.push(root.ty);
+        self.steps(&root.path);
+    }
+
+    fn steps(&mut self, steps: &[CheckedPlaceStep]) {
+        for step in steps {
+            match step {
+                CheckedPlaceStep::Field(_) => {}
+                CheckedPlaceStep::BoxReferent(nominal) => {
+                    self.types.push(CheckedType::Nominal(*nominal));
+                }
+                CheckedPlaceStep::Subscript(subscript) => {
+                    self.types
+                        .extend([subscript.base_type, subscript.element_type]);
+                    self.expression(&subscript.offset);
+                }
+            }
+        }
+    }
+}

@@ -48,7 +48,7 @@ use std::path::Path;
 use std::process::Command;
 
 use crate::backend::emitter::emit_llvm_with_layout;
-use crate::backend::target::{
+use crate::target::{
     PARALLEL_LANE_FRAME_ALIGNMENT, TargetLayout, TargetLayoutFailure, TargetObject,
     parallel_lane_frame_layout,
 };
@@ -296,7 +296,7 @@ fn selected_target_proves_the_complete_ordinary_lane_frame() {
         let exact_layout = layout(host, exact, false)
             .expect("the exact frame is target-representable")
             .expect("the exact frame fits the lane slot");
-        assert_eq!(exact_layout.size(), crate::LANE_FRAME_BYTES);
+        assert_eq!(exact_layout.size(), crate::target::LANE_FRAME_BYTES);
         assert_eq!(exact_layout.align(), 1);
         assert!(exact_layout.align() <= PARALLEL_LANE_FRAME_ALIGNMENT);
         assert_eq!(
@@ -314,7 +314,8 @@ fn selected_target_proves_the_complete_ordinary_lane_frame() {
             "a frame that exactly fills the slot cannot also carry a budget"
         );
 
-        let short_domain = host.with_address_index_max_for_test(crate::LANE_FRAME_BYTES - 1);
+        let short_domain =
+            host.with_address_index_max_for_test(crate::target::LANE_FRAME_BYTES - 1);
         assert_eq!(
             layout(short_domain, exact, false),
             Err(TargetLayoutFailure::Unrepresentable(
@@ -344,7 +345,7 @@ fn ordinary_lane_frame_limits_match_the_runtime_slot() {
             .trim_end_matches('u')
             .parse::<u64>()
             .expect("a decimal capacity"),
-        crate::LANE_FRAME_BYTES
+        crate::target::LANE_FRAME_BYTES
     );
     assert!(
         crate::SCHED_CORE_SOURCE.contains(&format!(
@@ -368,7 +369,7 @@ fn ordinary_overlap_uses_only_target_proved_lane_frames() {
     assert!(module_requires_parallel_runtime(&exact));
     assert!(exact.contains(&format!(
         "call ptr @wf__par_acquire_lane(i64 {})",
-        crate::LANE_FRAME_BYTES
+        crate::target::LANE_FRAME_BYTES
     )));
     assert!(
         !exact.contains("@wf__par_acquire_lane(i64 ptrtoint"),

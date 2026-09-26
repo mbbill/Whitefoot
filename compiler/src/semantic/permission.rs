@@ -98,7 +98,7 @@ use super::model::{
 };
 use super::places::{
     CapturedRange, CapturedValue, PlaceMap, PlaceRoot, PlaceStep, ResolvedPlace, SeparationOracle,
-    UnprovedSeparations, places_overlap, range_separation_candidate,
+    UnprovedSeparations, named_place, places_overlap, range_separation_candidate,
 };
 use crate::NodePath;
 
@@ -1509,49 +1509,6 @@ pub(super) fn argument_places(
     places: &PlaceMap,
     argument: &CheckedExpression,
 ) -> Option<Vec<ResolvedPlace>> {
-    let resolved = match argument {
-        CheckedExpression::Binding { binding, .. }
-        | CheckedExpression::DerefAddressed { binding, .. } => {
-            places.resolve(PlaceRoot::Binding(*binding), &[])
-        }
-        CheckedExpression::Project {
-            binding, fields, ..
-        } => places.resolve(PlaceRoot::Binding(*binding), &field_steps(fields)),
-        CheckedExpression::BoxTake { binding, .. } => {
-            places.resolve(PlaceRoot::Binding(*binding), &[])
-        }
-        CheckedExpression::BorrowAddressed { root, .. } => {
-            places.resolve(root.root, &container_steps(root))
-        }
-        CheckedExpression::BorrowRangeIndex { place, .. } => places
-            .resolve(PlaceRoot::Binding(place.root.binding), &[])
-            .into_iter()
-            .map(|mut resolved| {
-                resolved.path.push(PlaceStep::Index(place.captured));
-                resolved
-                    .path
-                    .extend(place.path.iter().map(CheckedPlaceStep::place_step));
-                resolved
-            })
-            .collect(),
-        // [REF-4, EFF-5] a range formed at the call names its source's
-        // places extended by the formation's own range step, the same path a
-        // bound range reference names; [OWN-7] judges that step against the
-        // other statement's paths, including by a retained range proof.
-        CheckedExpression::RangeOf {
-            source, captured, ..
-        } => {
-            let (root, steps) = source.place();
-            places
-                .resolve(root, &steps)
-                .into_iter()
-                .map(|mut resolved| {
-                    resolved.path.push(PlaceStep::Range(*captured));
-                    resolved
-                })
-                .collect()
-        }
-        _ => return None,
-    };
+    let resolved = named_place(argument)?.resolve(places, false);
     (!resolved.is_empty()).then_some(resolved)
 }

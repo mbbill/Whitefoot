@@ -922,6 +922,138 @@ pub(crate) struct BindingSummary {
     pub(crate) reference_unknown: bool,
 }
 
+/// How one expression names caller storage [REF-1, REF-4]: the written root
+/// and steps a consumer resolves through its own place map, the steps each
+/// resolved member takes below that, and the form that names them.
+///
+/// The entailment flow, the permission judgments and the place map read this
+/// one classification instead of each matching expression shapes, and it
+/// lists every expression form, so a new form is classified here before any
+/// consumer can miss it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct NamedPlace {
+    pub(crate) root: PlaceRoot,
+    pub(crate) steps: Vec<PlaceStep>,
+    /// Appended to each resolved member: a range formation's own step, or a
+    /// range element's index and path below its range reference.
+    pub(crate) suffix: Vec<PlaceStep>,
+    pub(crate) form: NamingForm,
+}
+
+/// Which written form names a [`NamedPlace`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum NamingForm {
+    /// A binding named whole: a reference names its referent, any other
+    /// binding its own storage.
+    Binding(BindingId),
+    /// `deref(r)`, a field projection or a Box-content take, reading the
+    /// storage it names.
+    Read,
+    /// A `borrow_expr` written at the expression, a range element's included
+    /// [REF-1].
+    Borrow,
+    /// A range formed at the expression [REF-4].
+    Range,
+}
+
+impl NamedPlace {
+    /// Each resolved member with the suffix below it. An unresolved written
+    /// place is kept as written when `keep_unresolved` asks for it: an
+    /// overlap treats that unknown target conservatively, where an empty
+    /// candidate set would lose it.
+    pub(crate) fn resolve(&self, places: &PlaceMap, keep_unresolved: bool) -> Vec<ResolvedPlace> {
+        let mut resolved = places.resolve(self.root, &self.steps);
+        if resolved.is_empty() && keep_unresolved {
+            resolved.push(ResolvedPlace {
+                root: self.root,
+                path: self.steps.clone(),
+            });
+        }
+        for place in &mut resolved {
+            place.path.extend(self.suffix.iter().cloned());
+        }
+        resolved
+    }
+}
+
+/// The caller storage `expression` names, or `None` for a form that names
+/// none.
+pub(crate) fn named_place(expression: &CheckedExpression) -> Option<NamedPlace> {
+    let named = |root, steps, suffix, form| {
+        Some(NamedPlace {
+            root,
+            steps,
+            suffix,
+            form,
+        })
+    };
+    match expression {
+        CheckedExpression::Binding { binding, .. } => named(
+            PlaceRoot::Binding(*binding),
+            Vec::new(),
+            Vec::new(),
+            NamingForm::Binding(*binding),
+        ),
+        CheckedExpression::DerefAddressed { binding, .. }
+        | CheckedExpression::BoxTake { binding, .. } => named(
+            PlaceRoot::Binding(*binding),
+            Vec::new(),
+            Vec::new(),
+            NamingForm::Read,
+        ),
+        CheckedExpression::Project {
+            binding, fields, ..
+        } => named(
+            PlaceRoot::Binding(*binding),
+            fields.iter().copied().map(PlaceStep::Field).collect(),
+            Vec::new(),
+            NamingForm::Read,
+        ),
+        CheckedExpression::BorrowAddressed { root, .. } => {
+            named(root.root, root.place_path(), Vec::new(), NamingForm::Borrow)
+        }
+        CheckedExpression::BorrowRangeIndex { place, .. } => named(
+            PlaceRoot::Binding(place.root.binding),
+            Vec::new(),
+            place.place_path(),
+            NamingForm::Borrow,
+        ),
+        CheckedExpression::RangeOf {
+            source, captured, ..
+        } => {
+            let (root, steps) = source.place();
+            named(
+                root,
+                steps,
+                vec![PlaceStep::Range(*captured)],
+                NamingForm::Range,
+            )
+        }
+        CheckedExpression::Constant(_)
+        | CheckedExpression::NamedConstant { .. }
+        | CheckedExpression::UserCall { .. }
+        | CheckedExpression::IntegerOperation { .. }
+        | CheckedExpression::FloatOperation { .. }
+        | CheckedExpression::NumericConversion { .. }
+        | CheckedExpression::Reinterpret { .. }
+        | CheckedExpression::BooleanOperation { .. }
+        | CheckedExpression::EnumEquality { .. }
+        | CheckedExpression::ArrayMeasure { .. }
+        | CheckedExpression::ArrayIndex { .. }
+        | CheckedExpression::BufferMeasure { .. }
+        | CheckedExpression::RangeMeasure { .. }
+        | CheckedExpression::RangeElementMeasure { .. }
+        | CheckedExpression::RangeIndex { .. }
+        | CheckedExpression::ContainerMeasure { .. }
+        | CheckedExpression::ReadStorage { .. }
+        | CheckedExpression::BufferIndex { .. }
+        | CheckedExpression::BoxDeref { .. }
+        | CheckedExpression::ConstructStruct { .. }
+        | CheckedExpression::ConstructEnum { .. }
+        | CheckedExpression::ProjectValue { .. } => None,
+    }
+}
+
 /// Dense per-binding types and the structural checker's resolved origins.
 #[derive(Debug, Default)]
 pub(crate) struct PlaceMap {
@@ -1019,15 +1151,11 @@ impl PlaceMap {
         for statement in statements {
             match statement {
                 CheckedStatement::Let { binding, value, .. } => {
-                    let names_reference = matches!(
-                        value,
-                        CheckedExpression::BorrowAddressed { .. }
-                            | CheckedExpression::BorrowRangeIndex { .. }
-                            | CheckedExpression::RangeOf { .. }
-                    ) || matches!(
-                        value,
-                        CheckedExpression::Binding { binding, .. } if self.is_reference(*binding)
-                    );
+                    let names_reference = match named_place(value).map(|named| named.form) {
+                        Some(NamingForm::Borrow | NamingForm::Range) => true,
+                        Some(NamingForm::Binding(named)) => self.is_reference(named),
+                        Some(NamingForm::Read) | None => false,
+                    };
                     let summary = self.summary_mut(*binding);
                     summary.ty = Some(value.ty());
                     summary.reference |= names_reference;

@@ -908,7 +908,7 @@ fn a_split_loop_carries_its_captures_and_a_second_combine() {
         );
     let unsplit = emit(source.as_bytes());
     let split = super::system::with_parallel_ir(source.as_bytes(), |program| {
-        use crate::backend::target::{TargetLayout, parallel_lane_frame_layout};
+        use crate::target::{TargetLayout, parallel_lane_frame_layout};
         let host = TargetLayout::host().expect("supported test host");
         let splitter = program
             .functions()
@@ -2348,7 +2348,7 @@ fn a_loop_whose_frame_is_too_wide_declines_and_says_so() {
                     .count(),
                 1
             );
-            let host = crate::backend::target::TargetLayout::host().expect("supported test host");
+            let host = crate::target::TargetLayout::host().expect("supported test host");
             let module = crate::backend::emitter::emit_llvm_with_layout(program, host)
                 .expect("ordinary lowering must retain valid nested synthesis ordinals")
                 .into_string();

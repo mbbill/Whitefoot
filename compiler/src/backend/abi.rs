@@ -75,7 +75,7 @@ pub(crate) struct FunctionAbi {
 
 impl FunctionAbi {
     pub(crate) fn build(
-        program: &IrProgram<'_, '_, '_>,
+        program: &IrProgram,
         function: &IrFunction,
     ) -> Result<Self, BackendFailure> {
         let parameters = function

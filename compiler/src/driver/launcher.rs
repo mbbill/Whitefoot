@@ -16,10 +16,7 @@ use crate::{BackendFailure, IrNominalKind, IrProgram, IrSourceMode, IrType};
 const INPUTS: &str = "std.process.Inputs";
 const EXIT_STATUS: &str = "std.process.ExitStatus";
 
-pub(crate) fn render(
-    program: &IrProgram<'_, '_, '_>,
-    selected: &str,
-) -> Result<String, BackendFailure> {
+pub(crate) fn render(program: &IrProgram, selected: &str) -> Result<String, BackendFailure> {
     let Some(main) = program
         .functions()
         .iter()

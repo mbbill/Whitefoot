@@ -730,14 +730,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         base: NodeId,
         parameters: &[ParameterSignature],
     ) -> Result<(CheckedStatePath, SelectedPlaceType), CheckStop> {
-        let origin = self.tree.path(base)?;
         let usage = self
             .resolved
-            .lexical_uses()
-            .iter()
-            .find(|usage| {
-                usage.role() == LexicalUseRole::EffectRoot && usage.origin().node() == origin
-            })
+            .lexical_uses_at(base)
+            .find(|usage| usage.role() == LexicalUseRole::EffectRoot)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         let ResolvedTarget::Source {
             declaration,
@@ -795,16 +791,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if self.has_fixed(suffix, FixedTerminal::LeftBracket)? {
             return self.effect_index_step(suffix, selected, parameters);
         }
-        let origin = self.tree.path(suffix)?;
         let mut names = self
             .resolved
-            .deferred_uses()
-            .iter()
+            .deferred_uses_at(suffix)
             .filter(|field| {
                 matches!(
                     field.role(),
                     crate::DeferredUseRole::EffectField | crate::DeferredUseRole::PayloadVariant
-                ) && field.origin().node() == origin
+                )
             })
             .collect::<Vec<_>>();
         names.sort_by_key(|field| field.origin().role_ordinal());
@@ -959,18 +953,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         selected: SelectedPlaceType,
         parameters: &[ParameterSignature],
     ) -> Result<(CheckedEffectStep, SelectedPlaceType), CheckStop> {
-        let origin = self.tree.path(suffix)?;
         let range = self.tree.first_child_with(suffix, Production::Erange)?;
         let range_origin = range.map(|node| self.tree.path(node)).transpose()?;
+        // A stable sort below orders the two nodes' uses; within one node
+        // both readers yield record order.
         let mut indices = self
             .resolved
-            .lexical_uses()
-            .iter()
-            .filter(|usage| {
-                usage.role() == LexicalUseRole::EffectIndex
-                    && (usage.origin().node() == origin
-                        || range_origin.is_some_and(|range| usage.origin().node() == range))
-            })
+            .lexical_uses_at(suffix)
+            .chain(
+                range
+                    .into_iter()
+                    .flat_map(|node| self.resolved.lexical_uses_at(node)),
+            )
+            .filter(|usage| usage.role() == LexicalUseRole::EffectIndex)
             .collect::<Vec<_>>();
         indices.sort_by_key(|usage| {
             (

@@ -34,7 +34,7 @@
 use crate::backend::emitter::{
     BackendFailure, WindowAddressFacts, emit_llvm_with_window_address_facts,
 };
-use crate::backend::target::{
+use crate::target::{
     TargetLayout, TargetLayoutFailure, TargetObject, TargetStorageType, validate_program,
     validate_static_storage,
 };

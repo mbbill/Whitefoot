@@ -43,7 +43,7 @@
 
 use std::fmt::Write as _;
 
-use crate::backend::target::{TargetLayout, TargetLayoutFailure};
+use crate::target::{TargetLayout, TargetLayoutFailure};
 
 // The same programs run against real descriptors and scripted linked bodies.
 // Both are still v0.59 sources owned by `tests/programs/`, not by this module;

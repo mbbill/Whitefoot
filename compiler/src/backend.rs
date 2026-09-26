@@ -7,7 +7,6 @@ mod graph;
 mod runtime;
 mod stack_ledger;
 mod storage;
-pub(crate) mod target;
 
 #[cfg(test)]
 mod tests;

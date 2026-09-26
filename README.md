@@ -362,7 +362,9 @@ perl .github/run-check.pl source-proofs cargo test --manifest-path compiler/Carg
 Use a test filter matching the responsibility changed; `source_proofs` above
 is one example. The `gate` profile builds the Rust compiler implementation and
 test harnesses with optimization, debug assertions and overflow checks. It is
-not an optimization switch for WF source. Use a dev build when debugging the
+not an optimization switch for WF source. Local builds of it are incremental,
+so an edit rebuilds in seconds rather than minutes; CI sets
+`CARGO_INCREMENTAL=0`. Use a dev build when debugging the
 Rust implementation, rather than constructing it for ordinary verification.
 Formatting and API documentation have explicit `format` and `docs` commands;
 they are not extra correctness-test stages. The complete gate is still

@@ -13,6 +13,7 @@ mod scopes;
 #[cfg(test)]
 mod tests;
 
+use crate::syntax::NodeId;
 use crate::{CanonicalSyntaxUnit, NodePath, SyntaxCoordinate};
 
 pub use engine::resolve;
@@ -1098,6 +1099,99 @@ pub struct ResolvedSyntaxUnit<'classified, 'lexed, 'source> {
     deferred_uses: Vec<DeferredUseRecord>,
     postconditions: Vec<PostconditionResolutionRecord>,
     interface_functions: Vec<InterfaceFunction>,
+    by_node: NodeRecords,
+}
+
+/// The positions of one record list's entries, grouped by the node that owns
+/// each entry's origin and kept in record order within a node, so a reader
+/// holding a node finds its records without scanning the list.
+#[derive(Debug, Default)]
+struct NodeIndex {
+    /// Node `n`'s entries are `entries[starts[n]..starts[n + 1]]`.
+    starts: Vec<usize>,
+    entries: Vec<usize>,
+}
+
+impl NodeIndex {
+    /// Groups the records by owner; `owners` yields each record's owner node
+    /// index in record order, or `None` for an origin that names no node.
+    fn build(nodes: usize, owners: impl Iterator<Item = Option<usize>> + Clone) -> Self {
+        let mut starts = vec![0; nodes + 1];
+        for owner in owners.clone().flatten() {
+            starts[owner + 1] += 1;
+        }
+        for node in 0..nodes {
+            starts[node + 1] += starts[node];
+        }
+        let mut next = starts.clone();
+        let mut entries = vec![0; starts[nodes]];
+        for (record, owner) in owners.enumerate() {
+            if let Some(owner) = owner {
+                entries[next[owner]] = record;
+                next[owner] += 1;
+            }
+        }
+        Self { starts, entries }
+    }
+
+    fn at(&self, node: NodeId) -> &[usize] {
+        match (
+            self.starts.get(node.index()),
+            self.starts.get(node.index() + 1),
+        ) {
+            (Some(start), Some(end)) => &self.entries[*start..*end],
+            _ => &[],
+        }
+    }
+}
+
+/// The record lists a checker reads by node, each indexed by its owner node.
+#[derive(Debug, Default)]
+pub(crate) struct NodeRecords {
+    declarations: NodeIndex,
+    dependent_declarations: NodeIndex,
+    lexical_uses: NodeIndex,
+    deferred_uses: NodeIndex,
+}
+
+impl NodeRecords {
+    /// Indexes each list by the node its records' origins name, finding a
+    /// node by its path through `node_of`.
+    pub(crate) fn build(
+        nodes: usize,
+        node_of: impl Fn(&NodePath) -> Option<usize>,
+        declarations: &[DeclarationRecord],
+        dependent_declarations: &[DependentDeclarationRecord],
+        lexical_uses: &[LexicalUseRecord],
+        deferred_uses: &[DeferredUseRecord],
+    ) -> Self {
+        Self {
+            declarations: NodeIndex::build(
+                nodes,
+                declarations
+                    .iter()
+                    .map(|record| node_of(record.origin().node())),
+            ),
+            dependent_declarations: NodeIndex::build(
+                nodes,
+                dependent_declarations
+                    .iter()
+                    .map(|record| node_of(record.origin().node())),
+            ),
+            lexical_uses: NodeIndex::build(
+                nodes,
+                lexical_uses
+                    .iter()
+                    .map(|record| node_of(record.origin().node())),
+            ),
+            deferred_uses: NodeIndex::build(
+                nodes,
+                deferred_uses
+                    .iter()
+                    .map(|record| node_of(record.origin().node())),
+            ),
+        }
+    }
 }
 
 /// One interface function declaration and the definition that implements
@@ -1208,6 +1302,52 @@ impl<'classified, 'lexed, 'source> ResolvedSyntaxUnit<'classified, 'lexed, 'sour
     #[must_use]
     pub fn deferred_uses(&self) -> &[DeferredUseRecord] {
         &self.deferred_uses
+    }
+
+    /// The declarations whose origin is `node`, in record order.
+    pub(crate) fn declarations_at(&self, node: NodeId) -> impl Iterator<Item = &DeclarationRecord> {
+        let records = &self.declarations;
+        self.by_node
+            .declarations
+            .at(node)
+            .iter()
+            .map(|index| &records[*index])
+    }
+
+    /// The dependent declarations whose origin is `node`, in record order.
+    pub(crate) fn dependent_declarations_at(
+        &self,
+        node: NodeId,
+    ) -> impl Iterator<Item = &DependentDeclarationRecord> {
+        let records = &self.dependent_declarations;
+        self.by_node
+            .dependent_declarations
+            .at(node)
+            .iter()
+            .map(|index| &records[*index])
+    }
+
+    /// The lexical uses whose origin is `node`, in record order.
+    pub(crate) fn lexical_uses_at(&self, node: NodeId) -> impl Iterator<Item = &LexicalUseRecord> {
+        let records = &self.lexical_uses;
+        self.by_node
+            .lexical_uses
+            .at(node)
+            .iter()
+            .map(|index| &records[*index])
+    }
+
+    /// The deferred uses whose origin is `node`, in record order.
+    pub(crate) fn deferred_uses_at(
+        &self,
+        node: NodeId,
+    ) -> impl Iterator<Item = &DeferredUseRecord> {
+        let records = &self.deferred_uses;
+        self.by_node
+            .deferred_uses
+            .at(node)
+            .iter()
+            .map(|index| &records[*index])
     }
 
     pub(crate) fn postconditions(&self) -> &[PostconditionResolutionRecord] {

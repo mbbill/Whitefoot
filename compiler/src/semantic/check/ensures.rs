@@ -833,17 +833,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let path = self.tree.path(base)?;
             let usage = self
                 .resolved
-                .lexical_uses()
-                .iter()
+                .lexical_uses_at(base)
                 .chain(
                     self.resolved
                         .postconditions()
                         .iter()
-                        .flat_map(|record| &record.provisional_uses),
+                        .flat_map(|record| &record.provisional_uses)
+                        .filter(|usage| usage.origin().node() == path),
                 )
-                .find(|usage| {
-                    usage.role() == LexicalUseRole::PlaceBase && usage.origin().node() == path
-                })
+                .find(|usage| usage.role() == LexicalUseRole::PlaceBase)
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
             let parameter = function.parameters.iter().find(|parameter| {
                 matches!(usage.target(), ResolvedTarget::Source { declaration, .. }

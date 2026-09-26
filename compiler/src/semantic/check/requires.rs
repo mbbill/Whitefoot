@@ -1766,26 +1766,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(call, Production::Callee)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let callee_path = self.tree.path(callee)?;
+        let is_callee = |usage: &&crate::LexicalUseRecord| {
+            matches!(
+                usage.role(),
+                LexicalUseRole::IdentifierCallee | LexicalUseRole::OperationCallee
+            )
+        };
         let usage = match clause {
-            ClauseKind::Requires => self.resolved.lexical_uses().iter().find(|usage| {
-                usage.origin().node() == callee_path
-                    && matches!(
-                        usage.role(),
-                        LexicalUseRole::IdentifierCallee | LexicalUseRole::OperationCallee
-                    )
-            }),
-            ClauseKind::Postcondition(record) => record
-                .provisional_uses
-                .iter()
-                .chain(self.resolved.lexical_uses())
-                .find(|usage| {
-                    usage.origin().node() == callee_path
-                        && matches!(
-                            usage.role(),
-                            LexicalUseRole::IdentifierCallee | LexicalUseRole::OperationCallee
-                        )
-                }),
+            ClauseKind::Requires => self.resolved.lexical_uses_at(callee).find(is_callee),
+            ClauseKind::Postcondition(record) => {
+                let callee_path = self.tree.path(callee)?;
+                record
+                    .provisional_uses
+                    .iter()
+                    .filter(|usage| usage.origin().node() == callee_path)
+                    .chain(self.resolved.lexical_uses_at(callee))
+                    .find(is_callee)
+            }
         };
         let Some(usage) = usage else {
             return self.invalid_clause(clause, entry);

@@ -27,7 +27,7 @@ use std::fmt::Write;
 use super::abi::{FunctionAbi, ParameterAbi};
 pub use super::runtime::*;
 use super::storage::{FunctionStoragePlan, is_stored_aggregate};
-use super::target::{
+use crate::target::{
     TargetAggregateLayout, TargetFramePlan, TargetFrameSlot, TargetLayout, TargetLayoutFailure,
     TargetStorageType, parallel_lane_frame_layout, plan_target_frame, validate_program,
     validate_static_storage,
@@ -90,7 +90,7 @@ impl LlvmModule {
 }
 
 #[cfg(test)]
-pub fn emit_llvm(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, BackendFailure> {
+pub fn emit_llvm(program: &IrProgram) -> Result<LlvmModule, BackendFailure> {
     let target = TargetLayout::host().map_err(BackendFailure::TargetLayout)?;
     emit_llvm_with_layout(program, target)
 }
@@ -98,7 +98,7 @@ pub fn emit_llvm(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, BackendF
 /// The executable builder may choose the no-pool world once at startup. The
 /// set depends on ordinary calls and physical lane fit, never on an entry kind.
 pub(crate) fn sequential_entry_symbol(
-    program: &IrProgram<'_, '_, '_>,
+    program: &IrProgram,
     name: &str,
 ) -> Result<Option<String>, BackendFailure> {
     let clones = sequential_clone_set(program);
@@ -133,7 +133,7 @@ pub(crate) fn sequential_entry_symbol(
 
 /// Emits the same ordinary callable ABI with a selected physical target layout.
 pub(crate) fn emit_llvm_with_layout(
-    program: &IrProgram<'_, '_, '_>,
+    program: &IrProgram,
     target: TargetLayout,
 ) -> Result<LlvmModule, BackendFailure> {
     emit_llvm_with_window_address_facts(program, target, WindowAddressFacts::Emit)
@@ -150,7 +150,7 @@ pub(super) enum WindowAddressFacts {
 }
 
 pub(super) fn emit_llvm_with_window_address_facts(
-    program: &IrProgram<'_, '_, '_>,
+    program: &IrProgram,
     target: TargetLayout,
     window_address_facts: WindowAddressFacts,
 ) -> Result<LlvmModule, BackendFailure> {
@@ -473,7 +473,7 @@ const HEAP_RECORD: &str = "{\"resource\":\"heap\"}\n";
 /// One call's arguments, in the emitting function's own parameters: what a
 /// same-signature forward to a clone or a variant passes on.
 fn ordinary_call_arguments(
-    program: &IrProgram<'_, '_, '_>,
+    program: &IrProgram,
     function: &IrFunction,
     abi: &FunctionAbi,
 ) -> Result<String, BackendFailure> {
@@ -494,7 +494,7 @@ fn ordinary_call_arguments(
 /// A range reference arrives as its element pointer and count (see
 /// [`super::abi`]); the body reassembles its `{ ptr, i64 }` pair at entry.
 fn incoming_parameter(
-    program: &IrProgram<'_, '_, '_>,
+    program: &IrProgram,
     value: IrValueId,
     parameter: ParameterAbi,
     facts: &str,
@@ -535,7 +535,7 @@ fn incoming_range_parts(value: IrValueId) -> (String, String) {
 /// outside the component sees the family; what changes is that the body it
 /// forwards to is emitted once, with the budget as a trailing parameter.
 fn emit_recursion_budget_entry(
-    program: &IrProgram<'_, '_, '_>,
+    program: &IrProgram,
     function: &IrFunction,
     frontiers: &RecursiveFrontiers,
     thunks: &mut ParallelThunks,
@@ -645,10 +645,7 @@ fn attach_stack_probe(module: &str, target: TargetLayout) -> String {
     text
 }
 
-fn emit_global_constants(
-    output: &mut String,
-    program: &IrProgram<'_, '_, '_>,
-) -> Result<(), BackendFailure> {
+fn emit_global_constants(output: &mut String, program: &IrProgram) -> Result<(), BackendFailure> {
     for constant in program.constants() {
         writeln!(output, "; const {}", constant.name())
             .map_err(|_| BackendFailure::TextEmission)?;
@@ -672,7 +669,7 @@ fn emit_global_constants(
 /// complete array, or a complete struct aggregate with each field rendered
 /// recursively [CONST-2 candidate].
 fn global_constant_value(
-    program: &IrProgram<'_, '_, '_>,
+    program: &IrProgram,
     value: &IrGlobalValue,
     ty: IrType,
 ) -> Result<String, BackendFailure> {
@@ -736,7 +733,7 @@ fn global_constant_value(
 
 fn emit_nominal_declarations(
     output: &mut String,
-    program: &IrProgram<'_, '_, '_>,
+    program: &IrProgram,
 ) -> Result<(), BackendFailure> {
     let mut emitted = false;
     for nominal in program.nominals() {
@@ -856,7 +853,7 @@ struct FunctionFrameContents<'plan> {
 impl FunctionFramePlan {
     fn build(
         target: TargetLayout,
-        program: &IrProgram<'_, '_, '_>,
+        program: &IrProgram,
         function: &IrFunction,
         contents: FunctionFrameContents<'_>,
     ) -> Result<Self, BackendFailure> {
@@ -942,7 +939,7 @@ impl FunctionFramePlan {
             .ok_or(BackendFailure::InvalidIr)
     }
 
-    fn render(&self, program: &IrProgram<'_, '_, '_>) -> Result<String, BackendFailure> {
+    fn render(&self, program: &IrProgram) -> Result<String, BackendFailure> {
         if self.target.is_empty() {
             return Ok(String::new());
         }
@@ -1027,7 +1024,7 @@ fn push_function_slot(
 
 #[allow(clippy::too_many_arguments)]
 struct FunctionEmitter<'program, 'state> {
-    program: &'program IrProgram<'program, 'program, 'program>,
+    program: &'program IrProgram,
     function: &'program IrFunction,
     /// The selected target, for the extents a proved fact states in bytes
     /// (compiler/backend-facts).
@@ -1122,7 +1119,7 @@ struct ModuleState<'state> {
 
 impl<'program, 'state> FunctionEmitter<'program, 'state> {
     fn new(
-        program: &'program IrProgram<'_, '_, '_>,
+        program: &'program IrProgram,
         target: TargetLayout,
         function: &'program IrFunction,
         module: ModuleState<'state>,
@@ -1261,10 +1258,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         // extends past its statically typed header states only the header it
         // is sure of, which is the direction `dereferenceable` needs.
         if let Some(referent) = referent
-            && let Ok(layout) = crate::backend::target::validate_static_storage(
+            && let Ok(layout) = crate::target::validate_static_storage(
                 self.target,
                 self.program,
-                &crate::backend::target::TargetStorageType::source(referent.ty()),
+                &crate::target::TargetStorageType::source(referent.ty()),
             )
             && layout.size() > 0
         {
@@ -1326,7 +1323,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         }
         let arguments = ordinary_call_arguments(self.program, self.function, abi)?;
         let spent = RecursiveFrontiers::exhausted(self.function.name());
-        let body = block_label(IrBlockId::from_index(0).map_err(|_| BackendFailure::InvalidIr)?);
+        let body = block_label(IrBlockId::from_index(0).ok_or(BackendFailure::InvalidIr)?);
         writeln!(self.output, "{GRAIN_ENTRY_LABEL}:").map_err(|_| BackendFailure::TextEmission)?;
         let anchor = self.output.len();
         writeln!(
@@ -1433,8 +1430,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 continue;
             }
             self.materialized.clear();
-            let block_id =
-                IrBlockId::from_index(index).map_err(|_| BackendFailure::CounterOverflow)?;
+            let block_id = IrBlockId::from_index(index).ok_or(BackendFailure::CounterOverflow)?;
             writeln!(self.output, "{}:", block_label(block_id))
                 .map_err(|_| BackendFailure::TextEmission)?;
             if index == 0 && prelude_anchor.is_none() {
@@ -1516,7 +1512,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             } = block.terminator()
             {
                 let predecessor =
-                    IrBlockId::from_index(index).map_err(|_| BackendFailure::CounterOverflow)?;
+                    IrBlockId::from_index(index).ok_or(BackendFailure::CounterOverflow)?;
                 incoming
                     .get_mut(target.index())
                     .ok_or(BackendFailure::InvalidIr)?
@@ -2222,7 +2218,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
 
 /// Fit every ordinary call's frame before selecting an overlap group.
 fn ordinary_overlap_lane_frames(
-    program: &IrProgram<'_, '_, '_>,
+    program: &IrProgram,
     target: TargetLayout,
     function: &IrFunction,
     overlap: &IrOverlap,
@@ -2273,7 +2269,7 @@ fn definition_operation(function: &IrFunction, value: IrValueId) -> Option<&IrOp
 }
 
 fn llvm_storage_type(
-    program: &IrProgram<'_, '_, '_>,
+    program: &IrProgram,
     ty: &TargetStorageType,
 ) -> Result<String, BackendFailure> {
     match ty {
@@ -2289,10 +2285,7 @@ fn llvm_storage_type(
     }
 }
 
-pub(crate) fn llvm_type(
-    program: &IrProgram<'_, '_, '_>,
-    ty: IrType,
-) -> Result<String, BackendFailure> {
+pub(crate) fn llvm_type(program: &IrProgram, ty: IrType) -> Result<String, BackendFailure> {
     match ty {
         IrType::Unit => Ok("i8".to_owned()),
         IrType::Bool => Ok("i1".to_owned()),
@@ -2391,7 +2384,7 @@ pub(crate) fn llvm_type(
     }
 }
 
-fn is_tag_only_type(program: &IrProgram<'_, '_, '_>, ty: IrType) -> Result<bool, BackendFailure> {
+fn is_tag_only_type(program: &IrProgram, ty: IrType) -> Result<bool, BackendFailure> {
     match ty {
         IrType::Bool => Ok(true),
         IrType::Nominal(id) => program
