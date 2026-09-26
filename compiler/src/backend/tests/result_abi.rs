@@ -402,8 +402,9 @@ fn linked_definitions_return_their_declared_register_results() {
                 );
                 linked.push(function.name().to_owned());
             }
-            // `Result<u64, Utf8Error>` is the one linked result that fits.
-            assert_eq!(linked, ["host_utf8_len"]);
+            // `Result<u64, Utf8Error>` is the one linked result that fits,
+            // named by its standard library module [MOD-10].
+            assert_eq!(linked, ["std.text.host_utf8_len"]);
         },
     );
 }
