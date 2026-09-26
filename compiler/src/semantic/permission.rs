@@ -1360,13 +1360,23 @@ pub(super) fn set_target_place(
     node: &NodePath,
     footprint: &mut Footprint,
 ) {
-    let holder = match target {
-        CheckedSetTarget::Place(target) => Some(target.binding),
-        CheckedSetTarget::RangeIndex(target) => Some(target.root.binding),
-        CheckedSetTarget::Storage(target) => target.binding(),
+    // A `set` whose whole target is a reference variable rebinds it and so
+    // writes that variable [REF-1]; every other target through one reads it
+    // to find the place it writes [PAR-1].
+    let (holder, rebinding) = match target {
+        CheckedSetTarget::Place(target) => (Some(target.binding), target.fields.is_empty()),
+        CheckedSetTarget::RangeIndex(target) => (Some(target.root.binding), false),
+        CheckedSetTarget::Storage(target) => (target.binding(), false),
     };
     if let Some(binding) = holder {
-        push_reference_holder_read(places, binding, node, footprint);
+        if rebinding && let Some(place) = places.reference_holder(binding) {
+            footprint.writes.push(Access {
+                place,
+                argument: node.clone(),
+            });
+        } else {
+            push_reference_holder_read(places, binding, node, footprint);
+        }
     }
     let resolved = match target {
         CheckedSetTarget::Place(target) => places.resolve(
@@ -1481,8 +1491,8 @@ fn push_nested_blocks<'check>(
 /// Every binding one expression tree mentions, for the counted judgment's
 /// accumulator count.
 ///
-/// A range formation's source is left out, as it always has been: neither
-/// consumer asks about a binding a range is formed over.
+/// A range formation's source is left out: neither consumer asks about a
+/// binding a range is formed over.
 pub(super) fn visit_read_bindings(
     expression: &CheckedExpression,
     note: &mut impl FnMut(BindingId),
@@ -1567,7 +1577,7 @@ fn push_reference_holder_read(
 /// callee's declared row already covers whatever it reaches through that
 /// reference. Naming a local reference variable, to pass it, read through
 /// it or form a range from it, reads that variable's own binding as well,
-/// which the `let` that formed it writes [PAR-1].
+/// which the `let` that formed it or a `set` that rebinds it writes [PAR-1].
 ///
 /// The match is exhaustive on purpose. A future expression form that reads
 /// caller storage must be classified here rather than silently contributing

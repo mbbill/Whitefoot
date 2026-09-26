@@ -1953,6 +1953,33 @@ fn a_set_through_a_reference_reads_the_let_that_formed_it() {
     );
 }
 
+/// A `set` that rebinds a reference variable writes it, so the rebinding
+/// stays ordered against a later statement that forms a range from the
+/// variable, as the `let` that first formed it is [REF-1, PAR-1].
+#[test]
+fn a_rebinding_set_writes_the_reference_it_rebinds() {
+    let source = br#"fn rebind(values: &Array<u8, 4>) -> result: unit writes(values) {
+  let whole = &deref(values)[0_u64..4_u64];
+  set whole = &deref(values)[1_u64..3_u64];
+  let head = &deref(whole)[0_u64..1_u64];
+  set deref(head)[0_u64] = 0_u8;
+  return unit;
+}
+"#;
+    let table = permission_of(source);
+    let permissions = function_table(&table, "rebind");
+    assert!(
+        !permissions.runs.iter().any(|run| {
+            run.sites.windows(2).any(|sites| {
+                sites[0].callee_name == "a set statement"
+                    && sites[1].callee_name == "a let statement"
+            })
+        }),
+        "the rebinding and the formation through it must stay ordered: {:?}",
+        permissions.runs
+    );
+}
+
 /// [PAR-1] a run means every source-ordered pair, including nonadjacent
 /// members. The benign scalar statement reaches neither range, so the two
 /// calls and that statement form one run only when the first/third captured
