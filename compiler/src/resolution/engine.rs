@@ -267,9 +267,7 @@ impl From<ResolutionCompilerFailure> for BuildStop {
 
 /// Resolves every active-specification declaration and lexical use in canonical syntax.
 #[must_use]
-pub fn resolve<'classified, 'lexed, 'source>(
-    syntax: CanonicalSyntaxUnit<'classified, 'lexed, 'source>,
-) -> ResolutionOutcome<'classified, 'lexed, 'source> {
+pub fn resolve(syntax: CanonicalSyntaxUnit) -> ResolutionOutcome {
     match build_tables(&syntax) {
         Ok(tables) => ResolutionOutcome::Complete(ResolvedSyntaxUnit {
             syntax,
@@ -292,7 +290,7 @@ pub fn resolve<'classified, 'lexed, 'source>(
     }
 }
 
-fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, BuildStop> {
+fn build_tables(syntax: &CanonicalSyntaxUnit) -> Result<Tables, BuildStop> {
     let topology = &syntax.finalized.topology;
     let scopes = ScopeBuild::build(topology, syntax.finalized.parsed.classified.source_bundle())?;
     // [DIAG-1] fixes this order: complete unit-wide FN-8 admission precedes
@@ -1389,7 +1387,7 @@ fn declaration_key(
 /// Whether the item that owns this declaration node writes `public` [MOD-6].
 fn declares_public(
     topology: &FinalizedTopology,
-    classified: &crate::ClassifiedBundle<'_, '_>,
+    classified: &crate::ClassifiedBundle,
     declaration: NodeId,
 ) -> bool {
     topology
@@ -1407,7 +1405,7 @@ fn declares_public(
 /// entry [GRAM-2, MOD-7].
 fn has_body(
     topology: &FinalizedTopology,
-    classified: &crate::ClassifiedBundle<'_, '_>,
+    classified: &crate::ClassifiedBundle,
     declaration: NodeId,
 ) -> bool {
     writes_fixed(topology, classified, declaration, FixedTerminal::LeftBrace)
@@ -1416,7 +1414,7 @@ fn has_body(
 /// Whether one node writes this fixed terminal directly.
 fn writes_fixed(
     topology: &FinalizedTopology,
-    classified: &crate::ClassifiedBundle<'_, '_>,
+    classified: &crate::ClassifiedBundle,
     node: NodeId,
     terminal: FixedTerminal,
 ) -> bool {

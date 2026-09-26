@@ -529,7 +529,7 @@ fn claims_rendering(function: &CheckedFunction) -> String {
     )
 }
 
-impl Checker<'_, '_, '_, '_> {
+impl Checker<'_> {
     /// The key resolution minted for every top-level item of this unit, by
     /// the item's ordinal among the root's children, as [`receipt_item`]
     /// spells it.

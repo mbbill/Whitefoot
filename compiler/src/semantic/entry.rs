@@ -54,7 +54,7 @@ impl EntryRejection<'_> {
     }
 }
 
-impl CheckedProgram<'_, '_, '_> {
+impl CheckedProgram {
     /// The ordinary function a selection names, found by its declaration's
     /// module: a PRE-1 function's checked record carries the first registered
     /// module, but its declaration belongs to no module's inventory [MOD-9,

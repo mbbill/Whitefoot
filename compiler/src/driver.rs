@@ -586,32 +586,26 @@ fn form_graph_record(
 ) -> Result<crate::ModuleGraph, CompilationFailure> {
     let bundle = SourceBundle::with_limits(&[graph], limits.source)
         .map_err(CompilationFailure::source_envelope)?;
-    with_canonical_syntax(
-        &bundle,
-        limits,
-        true,
-        |canonical| match crate::graph::form_graph(&canonical, package, library) {
-            Ok(Ok(mut graph)) => {
-                graph.locate_entries(|coordinate| {
-                    Place::resolve(&bundle, coordinate, Anchor::Start)
-                });
-                Ok(graph)
-            }
-            Ok(Err(issue)) => Err(CompilationFailure::at_source(
-                CompilationStage::ModuleGraph,
-                issue.rule_id(),
-                &issue,
-                &bundle,
-                issue.coordinate(),
-                Anchor::Start,
-            )),
-            Err(failure) => Err(CompilationFailure::new(
-                CompilationStage::ModuleGraph,
-                CompilationFailureKind::Compiler,
-                failure,
-            )),
-        },
-    )
+    let canonical = canonical_syntax(&bundle, limits, true)?;
+    match crate::graph::form_graph(&canonical, package, library) {
+        Ok(Ok(mut graph)) => {
+            graph.locate_entries(|coordinate| Place::resolve(&bundle, coordinate, Anchor::Start));
+            Ok(graph)
+        }
+        Ok(Err(issue)) => Err(CompilationFailure::at_source(
+            CompilationStage::ModuleGraph,
+            issue.rule_id(),
+            &issue,
+            &bundle,
+            issue.coordinate(),
+            Anchor::Start,
+        )),
+        Err(failure) => Err(CompilationFailure::new(
+            CompilationStage::ModuleGraph,
+            CompilationFailureKind::Compiler,
+            failure,
+        )),
+    }
 }
 
 /// `inputs` followed by the records of `graph`'s standard library modules,
@@ -1858,10 +1852,7 @@ fn composition_acceptance(
 
 /// [MOD-8] the interface function declarations of `module` that no
 /// implementation record of it defines, in source order.
-fn pending_declarations(
-    checked: &CheckedProgram<'_, '_, '_>,
-    module: crate::ModuleId,
-) -> Vec<String> {
+fn pending_declarations(checked: &CheckedProgram, module: crate::ModuleId) -> Vec<String> {
     checked
         ._resolved
         .interface_functions()
@@ -2347,7 +2338,7 @@ fn compile_selected(
 /// Locates and renders an entry's composition rejection [MOD-8, MOD-9,
 /// STOR-8]; the checked program makes the judgment.
 fn admit_entry(
-    checked: &CheckedProgram<'_, '_, '_>,
+    checked: &CheckedProgram,
     bundle: &SourceBundle,
     selection: &Selection<'_>,
 ) -> Result<(), CompilationFailure> {
@@ -2405,21 +2396,15 @@ fn admit_entry(
 }
 
 /// Runs the syntax stages over one bundle, from raw lexical formation through
-/// the canonical [FORM-2] audit, and lends the canonical unit to one
-/// continuation while every borrowed stage input remains alive. A module
-/// graph file takes the `graph_file` start and every source bundle the
-/// `program` start [GRAM-2, MOD-1]; the stages are otherwise one path.
-fn with_canonical_syntax<'bundle, T, F>(
-    bundle: &'bundle SourceBundle,
+/// the canonical [FORM-2] audit, and returns the canonical unit, which owns
+/// every stage's result. A module graph file takes the `graph_file` start and
+/// every source bundle the `program` start [GRAM-2, MOD-1]; the stages are
+/// otherwise one path.
+fn canonical_syntax(
+    bundle: &SourceBundle,
     limits: CompilerLimits,
     graph: bool,
-    continuation: F,
-) -> Result<T, CompilationFailure>
-where
-    F: for<'classified, 'lexed> FnOnce(
-        CanonicalSyntaxUnit<'classified, 'lexed, 'bundle>,
-    ) -> Result<T, CompilationFailure>,
-{
+) -> Result<CanonicalSyntaxUnit, CompilationFailure> {
     let lexed = match lex(bundle, limits.lexer) {
         LexOutcome::Complete(complete) => complete,
         LexOutcome::SourceIssue(issue) => {
@@ -2484,9 +2469,9 @@ where
         }
     };
     let parsed = match if graph {
-        parse_graph(&classified, limits.parser)
+        parse_graph(classified, limits.parser)
     } else {
-        parse(&classified, limits.parser)
+        parse(classified, limits.parser)
     } {
         ParseOutcome::Complete(complete) => complete,
         ParseOutcome::SourceIssue(issue) => {
@@ -2522,7 +2507,7 @@ where
         }
     };
     let finalized = match finalize(parsed, limits.finalizer) {
-        FinalizeOutcome::Complete(complete) => complete,
+        FinalizeOutcome::Complete(complete) => *complete,
         FinalizeOutcome::ResourceFailure(failure) => {
             return Err(CompilationFailure::new(
                 CompilationStage::Finalization,
@@ -2568,12 +2553,12 @@ where
             ));
         }
     };
-    continuation(canonical)
+    Ok(canonical)
 }
 
-/// Runs the one source front end and lends its checked program to one
-/// projection while every borrowed stage input remains alive. Both `check`
-/// and `compile` enter here; neither reconstructs a source verdict.
+/// Runs the one source front end and hands its checked program, with the
+/// bundle its locations name, to one projection. Both `check` and `compile`
+/// enter here; neither reconstructs a source verdict.
 fn with_checked_program<T, F>(
     inputs: &[SourceInput<'_>],
     modules: Option<&[crate::ModuleRecord]>,
@@ -2581,10 +2566,7 @@ fn with_checked_program<T, F>(
     continuation: F,
 ) -> Result<T, CompilationFailure>
 where
-    F: for<'classified, 'lexed, 'source> FnOnce(
-        CheckedProgram<'classified, 'lexed, 'source>,
-        &SourceBundle,
-    ) -> Result<T, CompilationFailure>,
+    F: FnOnce(CheckedProgram, &SourceBundle) -> Result<T, CompilationFailure>,
 {
     with_checked_program_using(inputs, modules, limits, None, continuation)
 }
@@ -2601,10 +2583,7 @@ fn with_checked_program_using<T, F>(
     continuation: F,
 ) -> Result<T, CompilationFailure>
 where
-    F: for<'classified, 'lexed, 'source> FnOnce(
-        CheckedProgram<'classified, 'lexed, 'source>,
-        &SourceBundle,
-    ) -> Result<T, CompilationFailure>,
+    F: FnOnce(CheckedProgram, &SourceBundle) -> Result<T, CompilationFailure>,
 {
     let bundle = match modules {
         Some(modules) => {
@@ -2613,83 +2592,82 @@ where
         None => SourceBundle::with_prelude(inputs, limits.source),
     }
     .map_err(CompilationFailure::source_envelope)?;
-    with_canonical_syntax(&bundle, limits, false, |canonical| {
-        let resolved = match resolve(canonical) {
-            ResolutionOutcome::Complete(complete) => complete,
-            ResolutionOutcome::SourceIssue { issue, .. } => {
-                return Err(CompilationFailure::at_source(
-                    CompilationStage::Resolution,
-                    issue.rule().id(),
-                    &issue,
+    let canonical = canonical_syntax(&bundle, limits, false)?;
+    let resolved = match resolve(canonical) {
+        ResolutionOutcome::Complete(complete) => complete,
+        ResolutionOutcome::SourceIssue { issue, .. } => {
+            return Err(CompilationFailure::at_source(
+                CompilationStage::Resolution,
+                issue.rule().id(),
+                &issue,
+                &bundle,
+                issue.origin().coordinate(),
+                Anchor::Start,
+            ));
+        }
+        ResolutionOutcome::CompilerFailure { failure, .. } => {
+            return Err(CompilationFailure::new(
+                CompilationStage::Resolution,
+                CompilationFailureKind::Compiler,
+                failure,
+            ));
+        }
+    };
+    let outcome = match receipts {
+        Some(receipts) => crate::semantic::check_semantics_with_receipts(resolved, receipts),
+        None => check_semantics(resolved),
+    };
+    let checked = match outcome {
+        SemanticOutcome::Complete(complete) => *complete,
+        SemanticOutcome::SourceIssue { issue, .. } => {
+            // A semantic rejection carries the richest payload in the
+            // toolchain; the coordinate the rule already selected names a
+            // line of the file the caller named, so it is printed the same
+            // way a syntax rejection's is. A rejection in a concrete
+            // instance also names the call that requested it [FN-2, MOD-8].
+            return Err(CompilationFailure::at_source(
+                CompilationStage::Semantics,
+                issue.rule_id(),
+                &issue,
+                &bundle,
+                issue.location().coordinate(),
+                Anchor::Start,
+            ));
+        }
+        SemanticOutcome::ResolutionIssue { issue, .. } => {
+            return Err(CompilationFailure::at_source(
+                CompilationStage::Resolution,
+                issue.rule().id(),
+                &issue,
+                &bundle,
+                issue.origin().coordinate(),
+                Anchor::Start,
+            ));
+        }
+        SemanticOutcome::Unsupported { unsupported, .. } => {
+            // A capability stop is never a source verdict, but the node
+            // that needed the capability is still where the writer looks.
+            return Err(CompilationFailure {
+                stage: CompilationStage::Semantics,
+                kind: CompilationFailureKind::Unsupported,
+                rule_id: None,
+                record: Box::new(Record::located(
+                    &unsupported,
                     &bundle,
-                    issue.origin().coordinate(),
+                    unsupported.node.coordinate(),
                     Anchor::Start,
-                ));
-            }
-            ResolutionOutcome::CompilerFailure { failure, .. } => {
-                return Err(CompilationFailure::new(
-                    CompilationStage::Resolution,
-                    CompilationFailureKind::Compiler,
-                    failure,
-                ));
-            }
-        };
-        let outcome = match receipts {
-            Some(receipts) => crate::semantic::check_semantics_with_receipts(resolved, receipts),
-            None => check_semantics(resolved),
-        };
-        let checked = match outcome {
-            SemanticOutcome::Complete(complete) => *complete,
-            SemanticOutcome::SourceIssue { issue, .. } => {
-                // A semantic rejection carries the richest payload in the
-                // toolchain; the coordinate the rule already selected names a
-                // line of the file the caller named, so it is printed the same
-                // way a syntax rejection's is. A rejection in a concrete
-                // instance also names the call that requested it [FN-2, MOD-8].
-                return Err(CompilationFailure::at_source(
-                    CompilationStage::Semantics,
-                    issue.rule_id(),
-                    &issue,
-                    &bundle,
-                    issue.location().coordinate(),
-                    Anchor::Start,
-                ));
-            }
-            SemanticOutcome::ResolutionIssue { issue, .. } => {
-                return Err(CompilationFailure::at_source(
-                    CompilationStage::Resolution,
-                    issue.rule().id(),
-                    &issue,
-                    &bundle,
-                    issue.origin().coordinate(),
-                    Anchor::Start,
-                ));
-            }
-            SemanticOutcome::Unsupported { unsupported, .. } => {
-                // A capability stop is never a source verdict, but the node
-                // that needed the capability is still where the writer looks.
-                return Err(CompilationFailure {
-                    stage: CompilationStage::Semantics,
-                    kind: CompilationFailureKind::Unsupported,
-                    rule_id: None,
-                    record: Box::new(Record::located(
-                        &unsupported,
-                        &bundle,
-                        unsupported.node.coordinate(),
-                        Anchor::Start,
-                    )),
-                });
-            }
-            SemanticOutcome::CompilerFailure { failure, .. } => {
-                return Err(CompilationFailure::new(
-                    CompilationStage::Semantics,
-                    CompilationFailureKind::Compiler,
-                    failure,
-                ));
-            }
-        };
-        continuation(checked, &bundle)
-    })
+                )),
+            });
+        }
+        SemanticOutcome::CompilerFailure { failure, .. } => {
+            return Err(CompilationFailure::new(
+                CompilationStage::Semantics,
+                CompilationFailureKind::Compiler,
+                failure,
+            ));
+        }
+    };
+    continuation(checked, &bundle)
 }
 
 fn lower_selected(
@@ -2702,7 +2680,7 @@ fn lower_selected(
     ),
     selection: &Selection<'_>,
     bundle: &SourceBundle,
-    checked: CheckedProgram<'_, '_, '_>,
+    checked: CheckedProgram,
 ) -> Result<Reported, CompilationFailure> {
     let entry = checked.selected_function(selection.module, selection.name);
     let selected = entry

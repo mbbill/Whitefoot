@@ -16,7 +16,7 @@ use super::{
     CheckStop, Checker, ConstructorTemplate, NominalInstance, NominalTemplate, PreludeType,
 };
 
-impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+impl<'unit> Checker<'unit> {
     /// [TYPE-2] whether this `struct_decl` carries the `opaque` modifier.
     ///
     /// The modifier is a written one, and [GRAM-2] admits it on a source

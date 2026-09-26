@@ -59,9 +59,7 @@ const CANONICAL_LIMITS: CanonicalLimits = CanonicalLimits {
 
 fn with_resolution<ResultValue>(
     inputs: &[SourceInput<'_>],
-    run: impl for<'classified, 'lexed, 'source> FnOnce(
-        ResolutionOutcome<'classified, 'lexed, 'source>,
-    ) -> ResultValue,
+    run: impl FnOnce(ResolutionOutcome) -> ResultValue,
 ) -> ResultValue {
     with_resolution_sources(inputs, false, run)
 }
@@ -69,9 +67,7 @@ fn with_resolution<ResultValue>(
 fn with_resolution_sources<ResultValue>(
     inputs: &[SourceInput<'_>],
     include_prelude: bool,
-    run: impl for<'classified, 'lexed, 'source> FnOnce(
-        ResolutionOutcome<'classified, 'lexed, 'source>,
-    ) -> ResultValue,
+    run: impl FnOnce(ResolutionOutcome) -> ResultValue,
 ) -> ResultValue {
     let bundle = if include_prelude {
         SourceBundle::with_prelude(inputs, SOURCE_LIMITS)
@@ -91,13 +87,13 @@ fn with_resolution_sources<ResultValue>(
     ) else {
         panic!("resolver test source must classify");
     };
-    let ParseOutcome::Complete(parsed) = parse(&classified, PARSE_LIMITS) else {
+    let ParseOutcome::Complete(parsed) = parse(classified, PARSE_LIMITS) else {
         panic!("resolver test source must parse");
     };
     let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
         panic!("resolver test derivation must finalize");
     };
-    let canonical = audit_canonical(finalized, CANONICAL_LIMITS);
+    let canonical = audit_canonical(*finalized, CANONICAL_LIMITS);
     let CanonicalOutcome::Complete(syntax) = canonical else {
         panic!("resolver test source must use exact FORM-2 formatting: {canonical:?}");
     };
@@ -106,9 +102,7 @@ fn with_resolution_sources<ResultValue>(
 
 fn with_one_resolution<ResultValue>(
     source: &[u8],
-    run: impl for<'classified, 'lexed, 'source> FnOnce(
-        ResolutionOutcome<'classified, 'lexed, 'source>,
-    ) -> ResultValue,
+    run: impl FnOnce(ResolutionOutcome) -> ResultValue,
 ) -> ResultValue {
     with_resolution(&[SourceInput::new("test.wf", source)], run)
 }

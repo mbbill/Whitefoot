@@ -1297,12 +1297,12 @@ pub enum SemanticCompilerFailure {
 
 /// Whole-unit semantic success and its only lowering authority.
 #[derive(Debug)]
-pub struct CheckedProgram<'classified, 'lexed, 'source> {
-    pub(crate) _resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
+pub struct CheckedProgram {
+    pub(crate) _resolved: ResolvedSyntaxUnit,
     pub(crate) data: CheckedProgramData,
 }
 
-impl CheckedProgram<'_, '_, '_> {
+impl CheckedProgram {
     /// [ENT-4] every judgment in the named functions that succeeded only
     /// because the state it was asked in is contradictory, so that a test can
     /// show a repaired program succeeds where its construct runs [DIAG-1].
@@ -1376,9 +1376,9 @@ impl CheckedProgram<'_, '_, '_> {
 
 /// Failure-atomic result of target-independent semantic checking.
 #[derive(Debug)]
-pub enum SemanticOutcome<'classified, 'lexed, 'source> {
+pub enum SemanticOutcome {
     /// Every applicable whole-unit judgment succeeded.
-    Complete(Box<CheckedProgram<'classified, 'lexed, 'source>>),
+    Complete(Box<CheckedProgram>),
     /// A numbered language rule was violated.
     SourceIssue {
         /// Deterministically selected semantic issue.

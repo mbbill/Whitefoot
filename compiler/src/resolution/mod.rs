@@ -1273,8 +1273,8 @@ pub enum ResolutionCompilerFailure {
 
 /// Canonical syntax plus complete active-specification lexical resolution tables.
 #[derive(Debug)]
-pub struct ResolvedSyntaxUnit<'classified, 'lexed, 'source> {
-    syntax: CanonicalSyntaxUnit<'classified, 'lexed, 'source>,
+pub struct ResolvedSyntaxUnit {
+    syntax: CanonicalSyntaxUnit,
     scopes: Vec<ScopeRecord>,
     prelude: Vec<PreludeDeclarationRecord>,
     declarations: Vec<DeclarationRecord>,
@@ -1403,7 +1403,7 @@ impl InterfaceFunction {
     }
 }
 
-impl<'classified, 'lexed, 'source> ResolvedSyntaxUnit<'classified, 'lexed, 'source> {
+impl ResolvedSyntaxUnit {
     /// [MOD-6, MOD-8] the read-only rendering of one module's resolved public
     /// interface: its public declarations and the complete definitions they
     /// reach, every name printed as its qualified identity and no `doc`
@@ -1436,7 +1436,7 @@ impl<'classified, 'lexed, 'source> ResolvedSyntaxUnit<'classified, 'lexed, 'sour
 
     /// Returns the source-bound canonical syntax consumed by this stage.
     #[must_use]
-    pub const fn syntax(&self) -> &CanonicalSyntaxUnit<'classified, 'lexed, 'source> {
+    pub const fn syntax(&self) -> &CanonicalSyntaxUnit {
         &self.syntax
     }
 
@@ -1562,27 +1562,27 @@ impl<'classified, 'lexed, 'source> ResolvedSyntaxUnit<'classified, 'lexed, 'sour
 
     /// Consumes resolution and returns the underlying canonical syntax.
     #[must_use]
-    pub fn into_syntax(self) -> CanonicalSyntaxUnit<'classified, 'lexed, 'source> {
+    pub fn into_syntax(self) -> CanonicalSyntaxUnit {
         self.syntax
     }
 }
 
 /// Failure-atomic outcome of active-specification lexical resolution.
 #[derive(Debug)]
-pub enum ResolutionOutcome<'classified, 'lexed, 'source> {
+pub enum ResolutionOutcome {
     /// The complete scope, declaration, lexical-use, and deferred-role tables.
-    Complete(ResolvedSyntaxUnit<'classified, 'lexed, 'source>),
+    Complete(ResolvedSyntaxUnit),
     /// The first spec-defined FN-8, inventory, or lookup rejection.
     SourceIssue {
         /// Canonical syntax retained for diagnostics or caller policy.
-        syntax: CanonicalSyntaxUnit<'classified, 'lexed, 'source>,
+        syntax: CanonicalSyntaxUnit,
         /// Deterministic resolver issue.
         issue: ResolutionIssue,
     },
     /// A trusted compiler invariant failed.
     CompilerFailure {
         /// Canonical syntax retained for debugging.
-        syntax: CanonicalSyntaxUnit<'classified, 'lexed, 'source>,
+        syntax: CanonicalSyntaxUnit,
         /// Internal failure class.
         failure: ResolutionCompilerFailure,
     },
