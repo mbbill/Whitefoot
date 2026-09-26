@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-26 Separate a range from an index, and from a window part it ends before
+
+Nodes: language/ownership/range-reference
+
+Owner-approved: The owner approved PR #141's range-reference amendment ("approved", written in Chinese), 2026-09-26, after choosing option (b) for the one-argument pairs every call refused ("I choose b", written in Chinese).
+
+Summary: language/ownership/range-reference's second decision names every separation a range has under the judgment all paths share: different roots, another range or an index proved apart from it, and a window's append slot, free slots or last filled slot it is proved empty or to end before in the state where the two places are compared, as an indexed position is; a proved separation of a range separates everything below it. The replaced clause, that different roots and indices or ranges proved distinct are a range's only separations, is rejected because it gave an index or a window part beside a range no family, so a row such as `reads(values[start..end]), writes(values[slot])` was refused at every call and a write through a range killed every fact beside it. Option (a), classing such pairs with those that overlap at every position so that no call compares them, is rejected because some values separate such a pair, so it would admit a call whose read range holds the written slot while every caller fact below the range still died at each write beside it. The [one-argument rows investigation](../research/investigations/one-argument-rows/DESIGN.md#follow-up-an-index-or-a-window-part-beside-a-range) supplies the soundness argument and the cases; the settled wording is in kernel-spec v0.74 rules OWN-7, WIN-2 and EFF-5. Remove the accepted amendment and the amendment directory. This ruling does not authorize a merge.
+
 ## 2026-09-26 Leave the opaque-struct refusals' words to the compiler and move the host handles' home
 
 Nodes: language/data-model/opaque-struct, language/system-interface/opaque-scalar-types, language, compiler/diagnostic-repairs, language/checks-and-proofs/automatic-facts, language/effects, language/effects/call-site-check, compiler/rejection-payloads, compiler/result-registers
