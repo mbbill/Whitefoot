@@ -217,6 +217,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(Some(index))
     }
 
+    /// Whether this instance is of the one row whose undischarged requirement
+    /// is reported under [OP-14] "at the complete `call`", where every other
+    /// callee's is an [FN-8] report.
+    pub(in crate::semantic::check) fn empties_run(
+        &self,
+        function: super::super::super::model::FunctionId,
+    ) -> Result<bool, CheckStop> {
+        let signature = self
+            .signatures
+            .get(function.0 as usize)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let Some(&template_index) = self.templates_by_declaration.get(&signature.declaration)
+        else {
+            return Ok(false);
+        };
+        let template = self
+            .function_templates
+            .get(template_index)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        Ok(self
+            .operand_directed_row_index(template)?
+            .and_then(|index| OPERAND_ROWS.get(index))
+            .is_some_and(|row| row.rule == SemanticRule::Op14))
+    }
+
     /// The substitution one call to an operand-directed row selects [OP-10].
     ///
     /// The operand is read as a written place, which is what every admitted
