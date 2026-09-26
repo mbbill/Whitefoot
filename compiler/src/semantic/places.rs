@@ -533,30 +533,6 @@ impl ResolvedPlace {
         })
     }
 
-    /// The captures of this path whose term still names `binding`: its
-    /// spelled indices of that binding and its range endpoints read from it,
-    /// which no write supersedes [`Self::supersede_binding`].
-    pub(crate) fn binding_captures(
-        &self,
-        binding: BindingId,
-    ) -> impl Iterator<Item = CaptureId> + '_ {
-        self.path
-            .iter()
-            .flat_map(|step| match step {
-                PlaceStep::Index(index) => [Some(*index), None],
-                PlaceStep::Range(range) => [Some(range.start), Some(range.end)],
-                PlaceStep::Deref
-                | PlaceStep::Descendant(_)
-                | PlaceStep::Field(_)
-                | PlaceStep::Payload { .. }
-                | PlaceStep::Part(_)
-                | PlaceStep::Measure(_) => [None, None],
-            })
-            .flatten()
-            .filter(move |captured| captured.term == CapturedTerm::Binding(binding))
-            .map(|captured| captured.capture)
-    }
-
     /// The indices of this path a write of their binding superseded, each as
     /// its capture and that binding.
     pub(crate) fn superseded_indices(&self) -> impl Iterator<Item = (CaptureId, BindingId)> + '_ {

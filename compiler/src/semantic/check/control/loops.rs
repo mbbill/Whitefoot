@@ -136,37 +136,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // the backedge wrote as superseded, not only the iterations after the
         // write, and [EFF-1] a parameter the backedge wrote holds no call
         // value there. [`Self::record_backedge_supersedes`] finds those
-        // bindings. An index or a range endpoint captured before the loop read
-        // the value the binding held on entry, so it read the call value when
-        // the entry state says so.
+        // bindings.
         let superseded = self
             .loop_superseded_bindings
             .borrow()
             .get(&id)
             .cloned()
             .unwrap_or_default();
-        let entry_call_values = bindings
-            .values()
-            .filter(|local| local.call_value)
-            .map(|local| local.binding)
-            .collect::<HashSet<_>>();
         let mut spelled = HashSet::new();
-        let mut call_value_captures = self.call_value_captures.borrow_mut();
         for reference in bindings
             .values_mut()
             .filter_map(|local| local.reference.as_mut())
         {
             for path in &mut reference.paths {
                 for binding in &superseded {
-                    if entry_call_values.contains(binding) {
-                        call_value_captures.extend(path.binding_captures(*binding));
-                    }
                     path.supersede_binding(*binding);
                 }
                 spelled.extend(path.spelled_indices());
             }
         }
-        drop(call_value_captures);
         for local in bindings.values_mut() {
             if superseded.contains(&local.binding) {
                 local.call_value = false;

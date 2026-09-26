@@ -615,10 +615,10 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// retries, and a new member restarts the walk, as a new loop-header
     /// summary path does.
     loop_superseded_bindings: RefCell<HashMap<super::model::CheckedLoopId, HashSet<BindingId>>>,
-    /// [EFF-1] the index captures that read a parameter's call value before a
-    /// write of the parameter superseded them. A superseded index names the
-    /// row's index parameter exactly when it is one of these. Every retry
-    /// starts empty.
+    /// [EFF-1] the index and range-endpoint captures that read a parameter
+    /// while it held its call value on every path to their formation, which
+    /// name the row's index parameter whatever later writes and joins do.
+    /// Every retry starts empty.
     call_value_captures: RefCell<HashSet<super::places::CaptureId>>,
     /// Resolved origins established by this structural function attempt.
     /// Every retry starts fresh; only its complete final walk is published.

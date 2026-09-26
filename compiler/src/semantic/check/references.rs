@@ -664,29 +664,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<(), CheckStop> {
         // [REF-1] a reference keeps the index value its formation read, so a
         // write of that binding leaves the reference valid but ends the
-        // binding's spelling as a name for its index. [EFF-1] An index or a
-        // range endpoint that read a parameter's call value still names the
-        // row's index parameter, and the parameter no longer holds that
-        // value.
+        // binding's spelling as a name for its index. [EFF-1] A parameter no
+        // longer holds its call value.
         if written.path.is_empty()
             && let PlaceRoot::Binding(binding) = written.root
         {
-            let call_value = bindings
-                .values()
-                .any(|local| local.binding == binding && local.call_value);
-            let mut call_value_captures = self.call_value_captures.borrow_mut();
             for reference in bindings
                 .values_mut()
                 .filter_map(|local| local.reference.as_mut())
             {
                 for path in &mut reference.paths {
-                    if call_value {
-                        call_value_captures.extend(path.binding_captures(binding));
-                    }
                     path.supersede_binding(binding);
                 }
             }
-            drop(call_value_captures);
             for local in bindings
                 .values_mut()
                 .filter(|local| local.binding == binding)
@@ -1024,8 +1014,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     ),
                 );
             }
-            let captured = Self::captured_of(offset_node, &offset.expression)
-                .unwrap_or(CapturedValue::unknown());
+            let captured = self.note_capture(
+                Self::captured_of(offset_node, &offset.expression)
+                    .unwrap_or(CapturedValue::unknown()),
+                bindings,
+            );
             let mut places = local
                 .reference
                 .as_ref()
@@ -1305,8 +1298,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         // [REF-1, OWN-7] each endpoint keeps the occurrence that evaluated it,
         // whatever its form, so this formation's endpoint images are its own.
-        let captured_start = Checker::captured_endpoint_of(start_node, &start.expression)?;
-        let captured_end = Checker::captured_endpoint_of(end_node, &end.expression)?;
+        let captured_start = self.note_capture(
+            Checker::captured_endpoint_of(start_node, &start.expression)?,
+            bindings,
+        );
+        let captured_end = self.note_capture(
+            Checker::captured_endpoint_of(end_node, &end.expression)?,
+            bindings,
+        );
         // [OWN-7] the formed reference names the base path extended by its
         // own range step; every later separation question reads that step.
         let captured = CapturedRange {
@@ -1412,11 +1411,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// index expression, and a row evaluates its index parameter once at the
     /// call, so this is the only index a declared row admits.
     ///
-    /// Every capture of a parameter that still holds its call value read that
-    /// value, since no path to here wrote it. After a write, a capture read
-    /// the call value exactly when the write, or the loop header it reached,
-    /// recorded it so: a superseded index, or a range endpoint, which keeps
-    /// its term.
+    /// A capture read the call value when its formation recorded it so
+    /// [`Self::note_capture`]. A spelled capture of a parameter that still
+    /// holds its call value read it too, since no path to here wrote it.
     fn captured_parameter(
         &self,
         captured: CapturedValue,
@@ -1448,6 +1445,30 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     && declaration.role() == DeclarationRole::Parameter
             })
             .map(|declaration| declaration.id())
+    }
+
+    /// [EFF-1] records a capture that reads a parameter while the parameter
+    /// holds its call value on every path to the formation, which is exactly
+    /// when the capture names the row's index parameter
+    /// [`Self::captured_parameter`]. Every formation of an index or a range
+    /// endpoint passes its capture through here; a later write of the
+    /// parameter, or a join with an edge that wrote it, does not change what
+    /// the capture read.
+    pub(super) fn note_capture(
+        &self,
+        captured: CapturedValue,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+    ) -> CapturedValue {
+        if let CapturedTerm::Binding(binding) = captured.term
+            && bindings
+                .values()
+                .any(|local| local.binding == binding && local.call_value)
+        {
+            self.call_value_captures
+                .borrow_mut()
+                .insert(captured.capture);
+        }
+        captured
     }
 
     /// [EFF-2] the enclosing formal-rooted effect of one resolved access.
