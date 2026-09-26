@@ -1908,24 +1908,6 @@ condition under which it is taken up.
   required source work from removable lowering cost. Defer a broad repeat of all
   eight engineering tasks until it answers a concrete selection question;
   a passing new library does not dispose of the remaining matrix claims.
-- **A call separates positions below containing paths that differ in an
-  index.** OWN-7 separates two ranges, or an index and a range, only under
-  one identical containing path, but EFF-5's call check also separates them
-  below containing paths that differ only in index steps it cannot prove
-  distinct. Two ranges formed at a call, `&deref(rows)[i][0_u64..2_u64]`
-  beside `&deref(rows)[j][2_u64..4_u64]`, were already accepted for unproved
-  `i` and `j`, and v0.74 accepts the same for an index beside a range, a row
-  `reads(rows[i][lo..hi]), writes(rows[j][k])` called with `lo: 0_u64,
-  hi: 2_u64, k: 3_u64`, and for two ranges a row takes from other arguments,
-  `reads(rows[i][lo..hi]), writes(rows[j][a..b])` called with `0_u64..2_u64`
-  and `2_u64..4_u64`. This is sound, since an index step's coordinates are
-  absolute: equal `i` and `j` name one row, whose positions the family
-  compares, and unequal ones name different rows. But the compiler admits
-  calls the specification's wording refuses. Decide whether OWN-7 states
-  the relation the checker implements or the checker requires identical
-  containing paths; validate with those three calls, and with containing
-  paths that differ in a range step, which must stay refused. Found by the
-  completion review of PR #141.
 - **A requirement through a reference is checked against its offset's
   current value.** After `let wr = &rows[k];` and `set k = 1_u64;`, a
   requirement a call states through `wr`, such as `requires i <

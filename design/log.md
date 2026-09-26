@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-26 Word the last-slot rule as the separations it keeps
+
+Nodes: language/ownership, language/ownership/range-reference
+
+Owner-approved: The owner agreed to decision cards 1 and 2 on PR #141 ("all agreed", written in Chinese), 2026-09-26.
+
+Summary: The second completion review of PR #141 found language/ownership's window-part decision still opening with a separation "from the window's append slot, its free slots or its last filled slot only where" the index is proved below the length, before saying the index is never separated from the last filled slot. The decision now opens with the append slot and the free slots only and links the [one-argument rows investigation](../research/investigations/one-argument-rows/DESIGN.md#the-last-filled-slot)'s account of the last filled slot, and its rejected alternative drops the specification version and pull request it named, since a node holds no history; no decision changes. The same ruling rewords two rules of kernel-spec v0.74. OWN-7 compares two ranges, or an index and a range, under containing paths that are identical step for step or differ only in index steps, the relation the checker implements, since an index is an absolute coordinate. WIN-2 states overlap as fixed data rather than as derived from the part definitions, since the last filled slot's row follows from EFF-2's covering. `Nodes:` also names language/ownership/range-reference, which the entries below change for this pull request, because the newest entry names every node changed against main. This ruling does not authorize a merge.
+
 ## 2026-09-26 Overlap every index and range with a window's last filled slot
 
 Nodes: language/ownership/range-reference, language/ownership
