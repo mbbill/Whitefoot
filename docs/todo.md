@@ -1044,6 +1044,24 @@ rarely insert at the same place.
   Found in the review of the holder-read fix; reopen when a program rebinds a
   reference parameter on a parallel path.
 
+- **PAR-1 reads nothing for a range formed through a Box.** A `let` whose
+  initializer forms a reference records no read of the place the reference
+  starts from, so PAR-1 permits
+  `let data = box_array_filled::<u64>(count: 2000000_u64, value: 0_u64);`
+  beside `let all = &data.inner[0_u64..2000000_u64];`
+  (`research/experiments/par-quicksort/quicksort.wf:73`) although forming the
+  range loads the Box's pointer, which the first statement writes. No
+  program observes it: the lowering hands out only calls, and a member that
+  is not a call ends every overlap group (`overlaps` in
+  `compiler/src/lowering/builder.rs`). Forming a reference to storage held
+  in place needs only its address, so only a path through a Box's `inner`
+  reads its owner. Record a read of the owner above each `inner` step a
+  formed path passes; validate with that pair denied, the rest of the
+  quicksort ledger unchanged, and `let larger = &deref(v)[after..n];` still
+  permitted beside `quicksort(v: smaller);`. Found while checking the
+  parallelism article's ledger; reopen before the lowering admits a member
+  that is not a call.
+
 - **Parallel actualization is decided during translation.** A counted-loop
   split is chosen while its body is being lowered
   (`compiler/src/lowering/builder/split.rs`). The rescue mechanisms follow
