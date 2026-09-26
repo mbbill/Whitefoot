@@ -1197,28 +1197,18 @@ rarely insert at the same place.
 
 ## Code structure
 
-- **The entailment flow module has outgrown one reader.**
-  `compiler/src/semantic/entailment/flow.rs` has 17,275 lines, 15,040 of them
-  in one `impl Analyzer` block; it grew from 8,670 lines on 2026-09-01 over 154
-  commits. `compiler/src/semantic/entailment/state.rs` (7,755 lines, including
-  a 1,729-line inline test module) and the tests in
-  `compiler/src/semantic/tests/entailment.rs` (10,996 lines, 155 tests) grew
-  with it. An agent reads such a file only in slices, and every
-  responsibility's changes land in the same file. Moving methods into files
-  would not separate its state: child modules take `use super::*` and
-  `pub(super)` methods on the one 37-field `Analyzer`, and the section markers
-  no longer match what they enclose. Split the state first into typed
-  sub-contexts, a vocabulary (terms, goals, ledger, atoms), read-only inputs,
-  outputs and walk frames, then move code along the components the
-  [architecture investigation](../research/investigations/compiler-architecture/DESIGN.md#p2-component-boundaries) lists (its
-  P2.1, which `design/compiler/engine-components.md` now records). `state.rs`
-  can move its test
-  module to its own file and its dense-closure algorithms apart from the fact
-  state and ledger types; the tests can group by the section they exercise.
-  Validate that each move changes no behavior: identical `make check` results
-  and a diff of moved items and module declarations only. Split when no open
-  branch has large edits in these files, or one section at a time; close when
-  every file named here is under 4,000 lines.
+- **The entailment state module and its tests have outgrown one reader.**
+  `compiler/src/semantic/entailment/state.rs` has 7,755 lines, including a
+  1,729-line inline test module, and the tests in
+  `compiler/src/semantic/tests/entailment.rs` have 11,016 lines and 156
+  tests. The flow itself is divided into its sub-contexts and component
+  modules (`design/compiler/engine-components.md`), none over 3,200 lines.
+  `state.rs` can move its test module to its own file and its dense-closure
+  algorithms apart from the fact state and ledger types; the tests can group
+  by the flow component they exercise. Validate that each move changes no
+  behavior: identical `make check` results and a diff of moved items and
+  module declarations only. Split when no open branch has large edits in
+  these files; close when both are under 4,000 lines.
 
 - **LLVM emission writes and then patches text.**
   `compiler/src/backend/emitter.rs` inserts entry allocas by byte offset and
