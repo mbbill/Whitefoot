@@ -4757,8 +4757,8 @@ impl Analyzer<'_, '_> {
     /// [WIN-2, ENT-5] the indices the entry state of `events` proves live,
     /// and the ranges it proves to end at or below their window's length.
     ///
-    /// Only an index directly below a window whose `next`, `free` or `last`
-    /// one of the events writes is asked about, through the place that holds
+    /// Only an index directly below a window whose `next` or `free` one of
+    /// the events writes is asked about, through the place that holds
     /// it: a term's, a goal's or an entry image's own path, whose prefix
     /// above the index is the window. The bound `i < r.len` is the one
     /// [OP-4] owed where the subscript was formed, judged again here over the
@@ -4779,10 +4779,9 @@ impl Analyzer<'_, '_> {
             };
             for written in self.places.resolve(place.root, &place.path) {
                 for (depth, step) in written.path.iter().enumerate() {
-                    if matches!(
-                        step,
-                        PlaceStep::Part(WindowPart::Next | WindowPart::Free | WindowPart::Last)
-                    ) {
+                    // [WIN-2] every position overlaps `last` whatever its
+                    // bound, so a write of it asks for none.
+                    if matches!(step, PlaceStep::Part(WindowPart::Next | WindowPart::Free)) {
                         written_parts.insert((written.root, depth));
                     }
                 }
