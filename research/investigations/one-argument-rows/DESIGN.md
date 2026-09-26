@@ -288,7 +288,8 @@ where `hi < r.len` or `hi <= lo` was proved, and posed v0.73's index row,
 covers any number of `take_back` calls with one `writes(r.last)` entry, and
 each call lowers `r.len` by one, so after `k` of them the callee has emptied
 every slot from the entry state's `r.len - k` up; `i != r.len - 1` at entry
-bounds only the first. The draft accepted three programs that show it:
+bounds only the first. The draft accepted three programs that show it,
+stored under [`probes/`](probes/) with a `review-` prefix:
 
 - `p07`: a callee declared `reads(source[i]), writes(target.last)` takes
   back twice and places back once. Called with one window for both
@@ -312,24 +313,34 @@ and every reference into the window died at `take_back`. Only the prelude's
 `take_back`, which takes back exactly one element, reaches no slot but its
 entry state's `r.len - 1`, and nothing used that either.
 
-### Two defects the review found beside the rule
+### Defects the reviews found beside the rule
 
 - **References after a user call that takes elements back.** The checker
   ended a window reference's bound [OP-10] only at the prelude's window
   operations, so a reference into a window outlived a user function whose
   row writes `r.last` and that took its slot back: `p01` read a released
   slot through a range reference, `p02` released a box twice through it,
-  and `p03` wrote through the freed box. The v0.73 checker accepts all
-  three. A call now also ends that bound for every window whose `last` or
-  `filled` its substituted row writes, as `take_back` and `remove_at` do.
-  It reads no `ensures` for this, so a callee that restores the length still
-  ends the bound; `docs/todo.md` records that loss.
+  and `p03` wrote through the freed box (stored as `review-p01` to
+  `review-p03`). The v0.73 checker accepts all three. A call now also ends
+  that bound for every window whose `last` or `filled` its substituted row
+  writes, as `take_back` and `remove_at` do. It reads no `ensures` for
+  this, so a callee that restores the length still ends the bound;
+  `docs/todo.md` records that loss.
 - **Two ranges a row supplies.** A pair of range positions was proved apart
   only from the endpoint images of a range formed at the call, so two
   ranges a row takes from other arguments, `reads(values[lo..hi]),
   writes(values[a..b])`, were refused even where the entry state proves
   `hi <= a`. The flow now falls back to each endpoint's own image, so such
   a call is separated where the ordering is proved and refused otherwise.
+- **A write through a range frame.** The second review found that REF-2's
+  proper-prefix question counted steps, so `outer[0_u64..2_u64][1_u64]`,
+  which selects `outer[1_u64]` through a range frame, was never a prefix of
+  a reference to `outer[1_u64][0_u64]`: a write replacing that element, or
+  a call taking elements back through it, left the reference live. The
+  v0.73 checker accepts these too, and the review's probes read freed
+  memory, corrupted the heap and segfaulted. The question now compares
+  storage depth: a range step followed by another step descends no level of
+  its own, and a run a path ends at lies half a level below its base.
 
 ### Soundness of the families
 
@@ -363,9 +374,10 @@ Criterion: (b) holds when every new conformance case below reaches its
 declared verdict through the ordinary compiler path, every running case
 exits 0, the v0.73 compiler refuses every positive case, and no existing
 case changes its verdict. It was fixed before the cases ran. The review's
-fixes added the `.last`, two-row-range and `ref2` rows under the same test,
-except `ref2-pos-reference-survives-user-push`, a control fixed in advance
-to stay accepted on both compilers.
+fixes added the `.last`, two-row-range, `ref2` and `op10` rows under the
+same test, except `ref2-pos-reference-survives-user-push` and
+`op10-pos-slot-reference-survives-insert-at`, controls fixed in advance to
+stay accepted on both compilers.
 
 | Case | v0.73 compiler | v0.74 |
 |---|---|---|
@@ -387,10 +399,17 @@ to stay accepted on both compilers.
 | `ref2-neg-index-reference-after-user-pop` | exit 0 | REF-2 |
 | `ref2-neg-range-reference-after-user-pop` | exit 0 | REF-2 |
 | `ref2-pos-reference-survives-user-push` | exit 0 | exit 0 |
+| `ref2-neg-reference-after-user-remove` | exit 0 | REF-2 |
+| `op10-pos-slot-reference-survives-insert-at` | exit 0 | exit 0 |
+| `ref2-neg-element-reference-after-range-frame-pop` | exit 0 | REF-2 |
+| `ref2-neg-element-reference-after-range-row-pop` | exit 0 | REF-2 |
+| `ref2-neg-element-reference-after-range-frame-write` | exit 0 | REF-2 |
 
-The criterion held. The two `ref2-neg` rows are the programs the v0.73
-checker wrongly accepted, and `ref2-pos-reference-survives-user-push` shows
-a user call that only appends keeps its bound. The pinned repair pair
+The criterion held. The `ref2-neg` rows are programs the v0.73 checker
+wrongly accepted; `ref2-pos-reference-survives-user-push` shows a user call
+that only appends keeps its bound, and
+`op10-pos-slot-reference-survives-insert-at` that a slot reference survives
+the prelude's `insert_at`, whose `ensures` carries its bound. The pinned repair pair
 `declared-row-omits-a-range-read-beside-a-written-slot.wf` shows EFF-2's
 suggested `reads(values[start..end].len), writes(values[slot])` accepted at
 a call that passes the slot outside the range. Of the probes above,

@@ -600,12 +600,32 @@ impl ResolvedPlace {
             }
             return true;
         }
-        let length_admitted = if include_equal {
-            self.path.len() <= other.path.len()
+        let depth_admitted = if include_equal {
+            self.storage_depth() <= other.storage_depth()
         } else {
-            self.path.len() < other.path.len()
+            self.storage_depth() < other.storage_depth()
         };
-        length_admitted && places_overlap(oracle, self, other)
+        depth_admitted && places_overlap(oracle, self, other)
+    }
+
+    /// How far below its root this path's storage lies, in half levels.
+    ///
+    /// A range selects a run of its base's elements, and the step after it
+    /// selects one of those elements, so `x[a..b][i]` lies at the level of
+    /// `x[k]` although it is one step longer; a run a path ends at lies
+    /// between its base and the base's elements [REF-4]. Counting steps would
+    /// let a write through a range frame miss a reference to the element it
+    /// replaces [REF-2].
+    fn storage_depth(&self) -> usize {
+        let last = self.path.len().saturating_sub(1);
+        self.path
+            .iter()
+            .enumerate()
+            .map(|(position, step)| match step {
+                PlaceStep::Range(_) => usize::from(position == last),
+                _ => 2,
+            })
+            .sum()
     }
 
     pub(crate) fn has_descendant(&self) -> bool {
@@ -1854,5 +1874,33 @@ mod tests {
             .is_proper_prefix_of(&reference)
         );
         assert!(!place(0, &[PlaceStep::Field(1)]).is_proper_prefix_of(&reference));
+    }
+
+    /// [REF-2, REF-4] a range frame descends no level of its own: `x[0..2][1]`
+    /// selects `x[1]`, so it is a proper prefix of `x[1][0]` although both
+    /// paths have two steps, and it is `x[1]`'s own level, not its prefix. A
+    /// run a path ends at lies between its base and the base's elements.
+    #[test]
+    fn a_range_frame_descends_no_level_of_its_own() {
+        let frame = PlaceStep::Range(CapturedRange {
+            start: literal(0, 0),
+            end: literal(1, 2),
+        });
+        let through_frame = place(0, &[frame, PlaceStep::Index(literal(2, 1))]);
+        let element = place(0, &[PlaceStep::Index(literal(3, 1))]);
+        let below = place(
+            0,
+            &[
+                PlaceStep::Index(literal(4, 1)),
+                PlaceStep::Index(literal(5, 0)),
+            ],
+        );
+        assert!(through_frame.may_be_prefix_of(&DENIED, &below, false));
+        assert!(!through_frame.may_be_prefix_of(&DENIED, &element, false));
+        assert!(through_frame.may_be_prefix_of(&DENIED, &element, true));
+
+        let run = place(0, &[frame]);
+        assert!(run.may_be_prefix_of(&DENIED, &element, false));
+        assert!(!element.may_be_prefix_of(&DENIED, &run, true));
     }
 }
