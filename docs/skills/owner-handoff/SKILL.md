@@ -21,8 +21,8 @@ English.
    ## Decision card #1
 
    ### Topic
-   The question the owner decides, in one sentence; for an amendment, the
-   node it changes.
+   The question the owner decides, in one sentence; for an amendment or a
+   finding about a design decision, the node it concerns.
 
    ### Current state
    What the specification, design or implementation does now, and the
