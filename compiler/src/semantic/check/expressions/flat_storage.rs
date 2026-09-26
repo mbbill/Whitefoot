@@ -1704,6 +1704,29 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
     }
 
+    /// The immutable value one range endpoint produced at this occurrence
+    /// [REF-1, REF-4].
+    ///
+    /// A formation's two endpoints are that formation's own values, and
+    /// [OWN-7] separates two ranges by exactly those values; the entailment
+    /// flow files the formation's endpoint images under its start capture.
+    /// An endpoint that no place relation can name (a field, a measure, an
+    /// element read) is therefore opaque but keeps the identity of the
+    /// occurrence that evaluated it, like every other endpoint, rather than a
+    /// marker two formations would share.
+    pub(in crate::semantic::check) fn captured_endpoint_of(
+        occurrence: NodeId,
+        endpoint: &CheckedExpression,
+    ) -> Result<CapturedValue, CheckStop> {
+        let capture = CaptureId::source(
+            u32::try_from(occurrence.index())
+                .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+        );
+        let term = Self::captured_of(occurrence, endpoint)
+            .map_or(CapturedTerm::Opaque, |captured| captured.term);
+        Ok(CapturedValue::new(capture, term))
+    }
+
     pub(in crate::semantic::check) fn check_indexed_atom_place(
         &self,
         node: NodeId,

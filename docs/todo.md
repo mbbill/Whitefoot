@@ -357,30 +357,6 @@ rarely insert at the same place.
   referent omission is found; close when the consumers read one inventory or
   that inventory is shown unsuitable for point-current flow facts.
 
-- **Range images share one key for every non-atom start endpoint.** This is a
-  source-acceptance soundness defect. The flow files each formation's endpoint
-  images under its start capture, and `captured_of` gives every endpoint that
-  is not a literal, a const or a plain binding read (a field, a measure, a
-  dereference, a subscript) the same nonidentity `CaptureId::Unknown`. The last
-  such formation's image therefore answers for all of them in
-  `prove_range_separation`, for both EFF-5 call separations and PAR-1
-  questions, and in `captured_range_length_image`. Witness: in a function over
-  `v: &[u8]` and `b: Bounds`, `let l = &deref(v)[b.lo..deref(v).len];` and an
-  identical `r`, passed together to a callee that writes both, are rejected
-  under EFF-5, but the same function is accepted once
-  `let e = &deref(v)[deref(v).len..deref(v).len];` follows them, because both
-  lookups read `e`'s empty image. With `e` formed first, two adjacent calls
-  that each write one of `l` and `r` are likewise permitted under PAR-1, and
-  denied without it. Key range images by formation identity instead, for
-  example by the formation node, or never file or read an image under a
-  nonidentity capture. Validate with both witnesses rejected or denied with
-  and without the unrelated range; the existing range-separation,
-  loop-carried generation and PAR-1 cases unchanged; and every changed corpus
-  verdict explained. The PAR-1 inline-range change evaluates only formations
-  whose start carries a source occurrence, so it adds no use of the shared
-  key. Take this up before other work relies on range separation for
-  non-atom endpoints.
-
 ## Containers and storage lowering
 
 - **Validate a shared Ring wrap calculation independent of layout bounds.**

@@ -2217,6 +2217,80 @@ fn rebound(v: &[u8], p: u64) -> result: u64 writes(v) contract {
     assert_eq!(kind.halves(), ("write", "write"));
 }
 
+/// [PAR-1, OWN-7, REF-1] a range's captured endpoints belong to its own
+/// formation, whatever their form. `collide` writes two ranges of one
+/// field-read spelling and `twice` writes one range twice, each through two
+/// adjacent calls; the empty range formed before those calls captures only
+/// its own endpoints, so it separates neither pair and both are denied.
+/// `apart` meets at one measure, `deref(w).len`, so the state before its
+/// first call proves the first range ends where the second starts, and that
+/// retained ordering permits the pair although no endpoint is a literal or a
+/// binding.
+#[test]
+fn range_endpoints_of_every_form_belong_to_their_own_formation() {
+    let source = br#"struct Bounds {
+  lo: u64;
+}
+
+fn mark(part: &[u8]) -> result: u64 writes(part) {
+  if 0_u64 < deref(part).len {
+    set deref(part)[0_u64] = 9_u8;
+  }
+  return 1_u64;
+}
+
+fn collide(v: &[u8], b: Bounds) -> result: u64 writes(v) contract {
+  requires b.lo <= deref(v).len;
+} {
+  let left = &deref(v)[b.lo..deref(v).len];
+  let right = &deref(v)[b.lo..deref(v).len];
+  let empty = &deref(v)[deref(v).len..deref(v).len];
+  let x = mark(part: left);
+  let y = mark(part: right);
+  return x +wrap y;
+}
+
+fn twice(v: &[u8], b: Bounds) -> result: u64 writes(v) contract {
+  requires b.lo <= deref(v).len;
+} {
+  let part = &deref(v)[b.lo..deref(v).len];
+  let empty = &deref(v)[deref(v).len..deref(v).len];
+  let x = mark(part: part);
+  let y = mark(part: part);
+  return x +wrap y;
+}
+
+fn apart(v: &[u8], u: &[u8], w: &[u8]) -> result: u64 reads(u), reads(w), writes(v) contract {
+  requires deref(u).len <= deref(w).len;
+  requires deref(w).len <= deref(v).len;
+} {
+  let low = &deref(v)[deref(u).len..deref(w).len];
+  let high = &deref(v)[deref(w).len..deref(v).len];
+  let x = mark(part: low);
+  let y = mark(part: high);
+  return x +wrap y;
+}
+"#;
+    let table = permission_of_with_discharged_query(
+        source,
+        &[("apart", RangeSeparationOrdering::LeftBeforeRight)],
+    );
+    for function in ["collide", "twice"] {
+        let pair = pair_of(&table, function, "mark", "mark");
+        let Denial::Footprint { kind, .. } = denial(pair, 1) else {
+            panic!(
+                "{function}: the overlapping writes must deny: {:?}",
+                pair.verdict
+            );
+        };
+        assert_eq!(kind.halves(), ("write", "write"), "{function}");
+    }
+    assert_eq!(
+        pair_of(&table, "apart", "mark", "mark").verdict,
+        PermissionVerdict::PermittedEligible
+    );
+}
+
 /// Prelude calls use the ordinary call permission judgment. This pure call
 /// forms the two adjacent eligible pairs rather than becoming an opaque
 /// statement the judgment passes over.

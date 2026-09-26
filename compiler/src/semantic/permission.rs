@@ -1165,9 +1165,10 @@ fn collect_footprint_range_queries(
 /// call-rooted match's scrutinee call. A range formed inside a match arm is
 /// formed after that statement's entry and is not one of them.
 ///
-/// Only a formation whose start endpoint carries its own source occurrence is
-/// listed, because the flow's range images are named by that capture; a start
-/// without one names no single formation [OWN-7].
+/// The flow's range images are named by the start endpoint's capture, and
+/// every range endpoint carries the source occurrence that evaluated it, so
+/// every formation is listed; the filter only keeps a capture that names no
+/// single formation from ever reaching the flow [OWN-7].
 fn call_range_formations(statement: &CheckedStatement) -> Vec<PermissionRangeFormation> {
     let value = match statement {
         CheckedStatement::Let { value, .. }

@@ -229,6 +229,10 @@ struct AffineFlowState {
     /// Current measure images belong to this control-flow edge. Queries mint
     /// images lazily, but cloning a predecessor isolates its later kills.
     measure_atoms: RefCell<WordHashMap<TermId, AffineForm>>,
+    /// Each range formation's endpoint images [REF-4], filed under its start
+    /// endpoint's source occurrence, which names that one formation. Nothing
+    /// is filed under a capture naming no single evaluation, so one
+    /// formation's image never answers for another's [OWN-7, ENT-3.S6].
     ranges: WordHashMap<CaptureId, AffineRangeImage>,
     indices: WordHashMap<CaptureId, AffineForm>,
     /// One atom standing for the whole value of a binding whose image is not
@@ -6425,6 +6429,29 @@ impl Analyzer<'_, '_> {
         })
     }
 
+    /// Files one [REF-4] formation's endpoint images under its start capture,
+    /// the key every reader of the range-image table looks them up by.
+    ///
+    /// Only a source occurrence names one formation, and the checker gives
+    /// every endpoint the occurrence that evaluated it. An image filed under
+    /// any other capture would answer for every range carrying that capture
+    /// [OWN-7], so nothing is filed for it and no ordering separates it.
+    fn file_range_image(
+        &mut self,
+        carrier: &crate::NodePath,
+        captured: CapturedRange,
+        start: &CheckedExpression,
+        end: &CheckedExpression,
+        affine: &mut AffineFlowState,
+    ) {
+        if !matches!(captured.start.capture, CaptureId::Source(_)) {
+            return;
+        }
+        if let Some(image) = self.range_formation_image(carrier, start, end, affine) {
+            affine.ranges.insert(captured.start.capture, image);
+        }
+    }
+
     /// The immutable length image one [REF-4] formation captured.
     ///
     /// The range-image table is keyed by the formation's original capture
@@ -7192,11 +7219,7 @@ impl Analyzer<'_, '_> {
                 // formation by that occurrence [REF-1], so a separation
                 // submitted at a later call reads exactly these two forms and
                 // never re-reads a spelling whose bindings may have moved on.
-                if let Some(image) =
-                    self.range_formation_image(carrier, start, end, &mut states.affine)
-                {
-                    states.affine.ranges.insert(captured.start.capture, image);
-                }
+                self.file_range_image(carrier, *captured, start, end, &mut states.affine);
                 let obligation_start = self.obligations.len();
                 let source_subscripts = match source {
                     CheckedRangeSource::Storage(root) => self.judge_place_subscripts(root, states),
@@ -17337,13 +17360,12 @@ mod range_argument_kill_tests {
         })
     }
 
-    /// [EFF-5, REF-4, CALL-3] a range formed at a call names the path a bound
-    /// range reference would name, so its projected write kills a measure of
-    /// an element that range may contain and keeps the origin's own measure
-    /// and the range's own measure. Before this path existed, an inline
-    /// actual named no referent and its write killed nothing.
-    #[test]
-    fn an_inline_range_actual_names_its_formation_path_for_kills() {
+    /// Runs `check` on the analyzer of one bodiless function whose binding i
+    /// names the places `reference_origins[i]` lists [REF-1].
+    fn with_analyzer<R>(
+        reference_origins: Vec<Vec<ResolvedPlace>>,
+        check: impl FnOnce(&mut Analyzer<'_, '_>) -> R,
+    ) -> R {
         let constant_ids = HashMap::new();
         let const_parameter_types = HashMap::new();
         let context = EntailmentContext {
@@ -17359,7 +17381,6 @@ mod range_argument_kill_tests {
             verified_postcondition_proofs: &[],
             binding_names: &[],
         };
-        let outer = range(10, 0, 3);
         let function = CheckedFunction {
             formal_hypothesis: false,
             id: crate::semantic::model::FunctionId(0),
@@ -17377,8 +17398,7 @@ mod range_argument_kill_tests {
             requirement_places: Vec::new(),
             postconditions: Vec::new(),
             body: None,
-            // `view` names `origin[0..3]`.
-            reference_origins: vec![Vec::new(), vec![place(vec![PlaceStep::Range(outer)])]],
+            reference_origins,
             body_disposition: Default::default(),
             allocates: false,
             call_separations: Vec::new(),
@@ -17387,7 +17407,61 @@ mod range_argument_kill_tests {
         };
         let mut analyzer = Analyzer::new(&context, &function);
         analyzer.places = PlaceMap::for_function(&function);
+        check(&mut analyzer)
+    }
 
+    /// [OWN-7, REF-4] a range formation's endpoint images are filed only
+    /// under a source occurrence, which names that one formation. Filed under
+    /// the capture that names no single evaluation, one formation's images
+    /// would answer for every range carrying that capture, so such a
+    /// formation files nothing and keeps its own formation's images apart.
+    #[test]
+    fn a_range_image_is_filed_only_under_its_own_formation() {
+        with_analyzer(Vec::new(), |analyzer| {
+            let carrier = crate::NodePath {
+                components: vec![0],
+            };
+            let mut affine = AffineFlowState::default();
+            let shared = CapturedRange {
+                start: CapturedValue::unknown(),
+                end: CapturedValue::unknown(),
+            };
+            analyzer.file_range_image(&carrier, shared, &endpoint(4), &endpoint(4), &mut affine);
+            assert!(
+                affine.ranges.is_empty(),
+                "a capture shared by formations files no image: {:?}",
+                affine.ranges
+            );
+            let own = range(20, 1, 3);
+            analyzer.file_range_image(&carrier, own, &endpoint(1), &endpoint(3), &mut affine);
+            let image = affine
+                .ranges
+                .get(&own.start.capture)
+                .expect("a formation files its images under its own start occurrence");
+            assert_eq!(
+                (&image.start, &image.end),
+                (&AffineForm::constant(1), &AffineForm::constant(3))
+            );
+            assert_eq!(affine.ranges.len(), 1);
+        });
+    }
+
+    /// [EFF-5, REF-4, CALL-3] a range formed at a call names the path a bound
+    /// range reference would name, so its projected write kills a measure of
+    /// an element that range may contain and keeps the origin's own measure
+    /// and the range's own measure. Before this path existed, an inline
+    /// actual named no referent and its write killed nothing.
+    #[test]
+    fn an_inline_range_actual_names_its_formation_path_for_kills() {
+        let outer = range(10, 0, 3);
+        // `view` names `origin[0..3]`.
+        let origins = vec![Vec::new(), vec![place(vec![PlaceStep::Range(outer)])]];
+        with_analyzer(origins, |analyzer| {
+            an_inline_range_actual_kills(analyzer, outer)
+        });
+    }
+
+    fn an_inline_range_actual_kills(analyzer: &mut Analyzer<'_, '_>, outer: CapturedRange) {
         let inner = range(20, 1, 3);
         let direct = formation(storage_source(), inner, 1, 3);
         assert_eq!(
