@@ -1650,9 +1650,9 @@ mod tests {
         assert_eq!(other_formation.paths.len(), 2);
         assert_eq!(
             other_formation.paths[0]
-                .spelled_index_bindings()
+                .spelled_indices()
                 .collect::<Vec<_>>(),
-            [BindingId(1)]
+            [(CaptureId::source(1), BindingId(1))]
         );
     }
 

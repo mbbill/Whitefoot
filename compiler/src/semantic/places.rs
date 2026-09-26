@@ -520,14 +520,15 @@ impl ResolvedPlace {
         }
     }
 
-    /// The bindings whose spelling still names an index of this path, which
-    /// a later write of one of them supersedes [`Self::supersede_binding`].
-    pub(crate) fn spelled_index_bindings(&self) -> impl Iterator<Item = BindingId> + '_ {
+    /// The indices of this path whose binding's spelling still names them,
+    /// each as its capture and that binding, which a later write of the
+    /// binding supersedes [`Self::supersede_binding`].
+    pub(crate) fn spelled_indices(&self) -> impl Iterator<Item = (CaptureId, BindingId)> + '_ {
         self.path.iter().filter_map(|step| match step {
             PlaceStep::Index(CapturedValue {
+                capture,
                 term: CapturedTerm::Binding(binding),
-                ..
-            }) => Some(*binding),
+            }) => Some((*capture, *binding)),
             _ => None,
         })
     }
@@ -1988,8 +1989,11 @@ mod tests {
             ],
         );
         assert_eq!(
-            path.spelled_index_bindings().collect::<Vec<_>>(),
-            [BindingId(1), BindingId(2)]
+            path.spelled_indices().collect::<Vec<_>>(),
+            [
+                (CaptureId::source(0), BindingId(1)),
+                (CaptureId::source(1), BindingId(2))
+            ]
         );
         path.supersede_binding(BindingId(1));
         let PlaceStep::Index(superseded) = path.path[0] else {
@@ -2005,8 +2009,8 @@ mod tests {
         assert_eq!(kept, binding(1, 2));
         assert_ne!(kept.goal_identity(), kept);
         assert_eq!(
-            path.spelled_index_bindings().collect::<Vec<_>>(),
-            [BindingId(2)]
+            path.spelled_indices().collect::<Vec<_>>(),
+            [(CaptureId::source(1), BindingId(2))]
         );
     }
 }

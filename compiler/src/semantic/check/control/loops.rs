@@ -11,6 +11,7 @@ use super::super::super::model::{
     BindingId, CheckedExpression, CheckedLoopId, CheckedLoopInvariant, CheckedMode,
     CheckedStatement, CheckedType, IntegerType, SubscriptedTerm,
 };
+use super::super::super::places::CaptureId;
 use super::super::references::{
     InvalidationEvent, LoopReferenceToken, ReferenceValidity, RequiredReferent,
 };
@@ -48,6 +49,14 @@ struct LoopReferenceEquation {
     entry_preservations: Vec<super::super::super::model::CheckedCallSeparation>,
 }
 
+/// The header [`Checker::enter_loop_reference_header`] forms: its reference
+/// equations, and each index capture a header reference still spells with
+/// its binding, which [`Checker::record_backedge_supersedes`] reads.
+struct LoopReferenceHeader {
+    equations: Vec<LoopReferenceEquation>,
+    spelled: HashSet<(CaptureId, BindingId)>,
+}
+
 #[derive(Clone)]
 struct LoopReferenceResolution {
     invalid: Option<InvalidationEvent>,
@@ -71,15 +80,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// Forms the one finite abstract header used to check every iteration.
     /// Every outer reference gets an owner-tagged validity variable. Only a
     /// holder a continuing source `set` may rebind loses capture precision
-    /// and receives the current finite path summary [REF-1]. It also returns
-    /// the bindings an index of a header reference still spells, which
-    /// [`Self::record_backedge_supersedes`] reads once the body is checked.
+    /// and receives the current finite path summary [REF-1].
     fn enter_loop_reference_header(
         &self,
         id: CheckedLoopId,
         rebound: &HashSet<DeclarationId>,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
-    ) -> Result<(Vec<LoopReferenceEquation>, HashSet<BindingId>), CheckStop> {
+    ) -> Result<LoopReferenceHeader, CheckStop> {
         let mut declarations = bindings.keys().copied().collect::<Vec<_>>();
         declarations.sort_by_key(|declaration| declaration.index());
         let mut equations = Vec::new();
@@ -141,22 +148,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 for binding in &superseded {
                     path.supersede_binding(*binding);
                 }
-                spelled.extend(path.spelled_index_bindings());
+                spelled.extend(path.spelled_indices());
             }
         }
-        Ok((equations, spelled))
+        Ok(LoopReferenceHeader { equations, spelled })
     }
 
-    /// [REF-1] records each binding an index of a header reference spelled
-    /// at the header and holds superseded on the backedge, and restarts the
-    /// walk when one is new, as a grown path summary does: the next
-    /// iteration reaches the header after that write. A write on a path that
-    /// leaves the loop reaches no header. There are finitely many pairs of
-    /// loop and binding, so the restarts end.
+    /// [REF-1] records the binding of each index capture a header reference
+    /// spelled at the header and holds superseded on the backedge, and
+    /// restarts the walk when one is new, as a grown path summary does: the
+    /// next iteration reaches the header after that write. A write on a path
+    /// that leaves the loop reaches no header, and an index superseded
+    /// before the loop is no capture the header spelled. There are finitely
+    /// many pairs of loop and binding, so the restarts end.
     fn record_backedge_supersedes(
         &self,
         id: CheckedLoopId,
-        spelled: &HashSet<BindingId>,
+        spelled: &HashSet<(CaptureId, BindingId)>,
         header_keys: &[DeclarationId],
         backedge: &HashMap<DeclarationId, LocalBinding>,
     ) -> Result<(), CheckStop> {
@@ -169,8 +177,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 continue;
             };
             for path in &reference.paths {
-                for (_, binding) in path.superseded_indices() {
-                    if spelled.contains(&binding) {
+                for (capture, binding) in path.superseded_indices() {
+                    if spelled.contains(&(capture, binding)) {
                         grown |= recorded.insert(binding);
                     }
                 }
@@ -636,8 +644,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let rebound =
             self.continuing_reference_rebindings(&executable_statements, &base_bindings)?;
         let mut header_bindings = base_bindings.clone();
-        let (reference_equations, header_spelled) =
-            self.enter_loop_reference_header(id, &rebound.holders, &mut header_bindings)?;
+        let LoopReferenceHeader {
+            equations: reference_equations,
+            spelled: header_spelled,
+        } = self.enter_loop_reference_header(id, &rebound.holders, &mut header_bindings)?;
         if header_bindings
             .insert(
                 binder_declaration_id,
@@ -1086,8 +1096,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             preserved: preserved.clone(),
         });
         let mut header_bindings = base_bindings.clone();
-        let (reference_equations, header_spelled) =
-            self.enter_loop_reference_header(id, &rebound.holders, &mut header_bindings)?;
+        let LoopReferenceHeader {
+            equations: reference_equations,
+            spelled: header_spelled,
+        } = self.enter_loop_reference_header(id, &rebound.holders, &mut header_bindings)?;
         let mut body_bindings = header_bindings.clone();
         let allowed_invariant_values = base_keys.iter().copied().collect::<HashSet<_>>();
         let invariants = self.form_loop_invariants(
