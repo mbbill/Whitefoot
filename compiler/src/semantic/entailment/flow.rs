@@ -7192,14 +7192,8 @@ impl Analyzer<'_, '_> {
                 // formation by that occurrence [REF-1], so a separation
                 // submitted at a later call reads exactly these two forms and
                 // never re-reads a spelling whose bindings may have moved on.
-                if let Some(image) = self
-                    .affine_expression_form(start, &mut states.affine)
-                    .zip(self.affine_expression_form(end, &mut states.affine))
-                    .map(|(start, end)| AffineRangeImage {
-                        source: carrier.clone(),
-                        start,
-                        end,
-                    })
+                if let Some(image) =
+                    self.range_formation_image(carrier, start, end, &mut states.affine)
                 {
                     states.affine.ranges.insert(captured.start.capture, image);
                 }
@@ -9601,7 +9595,7 @@ impl Analyzer<'_, '_> {
                     self.prove_index_separation(left, right, state)
                 }
                 CheckedCallSeparationPositions::Ranges(left, right) => {
-                    self.prove_range_separation(left, right, state)
+                    self.prove_range_separation(left, right, &state.facts, &state.affine)
                 }
                 CheckedCallSeparationPositions::Live(index) => separation
                     .window
@@ -9865,10 +9859,11 @@ impl Analyzer<'_, '_> {
         &mut self,
         left: CapturedRange,
         right: CapturedRange,
-        state: &ProofFlowState,
+        facts: &FactState,
+        affine: &AffineFlowState,
     ) -> Option<ProofResult> {
-        let left_image = state.affine.ranges.get(&left.start.capture)?.clone();
-        let right_image = state.affine.ranges.get(&right.start.capture)?.clone();
+        let left_image = affine.ranges.get(&left.start.capture)?.clone();
+        let right_image = affine.ranges.get(&right.start.capture)?.clone();
         for (ordering, end, start) in [
             (
                 RangeSeparationOrdering::LeftBeforeRight,
@@ -9897,7 +9892,7 @@ impl Analyzer<'_, '_> {
                 continue;
             };
             let mut proof = self.prove(
-                ProofContext::new(&state.facts, &state.affine),
+                ProofContext::new(facts, affine),
                 ProofGoal::Affine {
                     inequality: &inequality,
                     right: None,
@@ -9936,7 +9931,7 @@ impl Analyzer<'_, '_> {
         for index in pending {
             let query = self.permission_separations[index].query.clone();
             let derivation = self
-                .prove_range_separation(query.left, query.right, state)
+                .prove_permission_separation(&query, state)
                 .and_then(|proof| proof.derivation);
             let attempt = &mut self.permission_separations[index];
             attempt.attempted = true;
@@ -9945,6 +9940,66 @@ impl Analyzer<'_, '_> {
                 attempt.derivations.push(derivation);
             }
         }
+    }
+
+    /// One [PAR-1] range question in the state before its first statement.
+    ///
+    /// A range bound before that statement has the image its formation
+    /// published. A range one of the pair's calls forms as an actual has
+    /// none yet, because its formation runs with its call; it names the same
+    /// storage as that range bound immediately before the first statement
+    /// [REF-4], so its endpoints are evaluated here, in a copy of this state,
+    /// into exactly the image such a binding would publish. The planner lists
+    /// a later statement's formation only when nothing before it writes what
+    /// its endpoints read, so these are the values that formation evaluates.
+    /// The copy keeps the atoms this evaluation mints out of the ordinary
+    /// walk and replaces any image an earlier evaluation left under the same
+    /// capture.
+    fn prove_permission_separation(
+        &mut self,
+        query: &PermissionSeparationQuery,
+        state: &ProofFlowState,
+    ) -> Option<ProofResult> {
+        if query.formations.is_empty() {
+            return self.prove_range_separation(
+                query.left,
+                query.right,
+                &state.facts,
+                &state.affine,
+            );
+        }
+        let mut affine = state.affine.clone();
+        for formation in &query.formations {
+            let capture = formation.captured.start.capture;
+            match self.range_formation_image(
+                &formation.carrier,
+                &formation.start,
+                &formation.end,
+                &mut affine,
+            ) {
+                Some(image) => affine.ranges.insert(capture, image),
+                None => affine.ranges.remove(&capture),
+            };
+        }
+        self.prove_range_separation(query.left, query.right, &state.facts, &affine)
+    }
+
+    /// The image one [REF-4] formation publishes: its two endpoints' affine
+    /// forms in `affine`, attached to the formation node.
+    fn range_formation_image(
+        &mut self,
+        carrier: &crate::NodePath,
+        start: &CheckedExpression,
+        end: &CheckedExpression,
+        affine: &mut AffineFlowState,
+    ) -> Option<AffineRangeImage> {
+        self.affine_expression_form(start, affine)
+            .zip(self.affine_expression_form(end, affine))
+            .map(|(start, end)| AffineRangeImage {
+                source: carrier.clone(),
+                start,
+                end,
+            })
     }
 
     fn finalize_permission_separations(&mut self) -> Vec<PermissionSeparationProof> {

@@ -60,12 +60,14 @@ fn main() -> status: ExitStatus pure {
 const MARKER: &str = "fn write_marker(output: &u64, source: &[u8], start: u64, end: u64) -> result: Result<u64, IoError> reads(source), writes(output) {\n  let previous = deref(output);\n  let length = deref(source).len;\n  set deref(output) = previous +wrap start;\n  return Ok<u64, IoError>(value: end);\n}\n\n";
 
 fn permission_of(source: &[u8]) -> PermissionMetadata {
-    permission_of_with_discharged_query(source, None)
+    permission_of_with_discharged_query(source, &[])
 }
 
+/// The permission table of one fixture, after asserting that each named
+/// function retains a discharged range question with the named ordering.
 fn permission_of_with_discharged_query(
     source: &[u8],
-    expected: Option<(&str, RangeSeparationOrdering)>,
+    expected: &[(&str, RangeSeparationOrdering)],
 ) -> PermissionMetadata {
     let combined = [MARKER.as_bytes(), source].concat();
     with_semantics(&combined, |outcome| {
@@ -75,7 +77,7 @@ fn permission_of_with_discharged_query(
         for function in &program.data.functions {
             super::entailment::validate_derivations(&function.entailment);
         }
-        if let Some((expected_function, expected_ordering)) = expected {
+        for &(expected_function, expected_ordering) in expected {
             let function = program
                 .data
                 .functions
@@ -98,7 +100,8 @@ fn permission_of_with_discharged_query(
                             )
                         })
                     }),
-                "the permitted range pair must retain its exact {expected_ordering:?} conclusion"
+                "{expected_function}: the permitted range pair must retain its exact \
+                 {expected_ordering:?} conclusion"
             );
         }
         program.data.permission.clone()
@@ -1834,7 +1837,7 @@ fn separated(values: &Array<u8, 4>, split: u64) -> result: u64 writes(values) co
     );
     let table = permission_of_with_discharged_query(
         source.as_bytes(),
-        Some(("separated", RangeSeparationOrdering::LeftBeforeRight)),
+        &[("separated", RangeSeparationOrdering::LeftBeforeRight)],
     );
     assert_eq!(
         pair_of(&table, "separated", "stamp_range", "stamp_range").verdict,
@@ -1865,7 +1868,7 @@ fn separated(values: &Array<u8, 4>, split: u64) -> result: u64 writes(values) co
     );
     let table = permission_of_with_discharged_query(
         source.as_bytes(),
-        Some(("separated", RangeSeparationOrdering::LeftBeforeRight)),
+        &[("separated", RangeSeparationOrdering::LeftBeforeRight)],
     );
     let permissions = function_table(&table, "separated");
     assert!(
@@ -2044,6 +2047,172 @@ fn shared(values: &Array<u8, 4>) -> result: u64 writes(values) {{
             "overlapping inline ranges must meet on their resolved paths: {:?}",
             pair.verdict
         );
+    };
+    assert_eq!(kind.halves(), ("write", "write"));
+}
+
+// A partition-based recursive subdivision over one range parameter. The
+// split point is a call result, so only its `ensures` places it inside the
+// range, and each caller below forms its two child ranges either as call
+// actuals or as bound ranges first.
+const PARTITION_HELPER: &str = r#"fn partition(v: &[u8]) -> pivot_at: u64 writes(v) contract {
+  requires 2_u64 <= deref(v).len;
+  ensures pivot_at < deref(v).len;
+} {
+  let first = deref(v)[0_u64];
+  set deref(v)[0_u64] = first;
+  return 0_u64;
+}
+"#;
+
+/// The body of one recursive subdivision: `children` is the pair of
+/// statements that forms and passes the two child ranges.
+fn subdivision(name: &str, children: &str) -> String {
+    format!(
+        "fn {name}(v: &[u8]) -> result: unit writes(v) {{
+  let n = deref(v).len;
+  if n <= 1_u64 {{
+    return unit;
+  }}
+  let p = partition(v: v);
+  let after = p + 1_u64;
+{children}  return unit;
+}}
+"
+    )
+}
+
+/// [PAR-1, REF-4, OWN-7] a range formed at the call names exactly the storage
+/// the same range bound first names, so the verdict cannot depend on the
+/// spelling. Both spellings of the two splits — at `p` and `p + 1`, and at one
+/// shared `p` — are permitted by the same retained ordering, proved in the
+/// state before the first call. The recursive calls read `after` and `n` but
+/// write only their child ranges, so nothing the first call writes changes
+/// the second call's endpoints.
+#[test]
+fn a_range_formed_at_the_call_is_judged_as_the_same_range_bound_first() {
+    let source = [
+        PARTITION_HELPER.to_owned(),
+        subdivision(
+            "split_inline",
+            "  split_inline(v: &deref(v)[0_u64..p]);\n  split_inline(v: &deref(v)[after..n]);\n",
+        ),
+        subdivision(
+            "split_bound",
+            "  let smaller = &deref(v)[0_u64..p];\n  let larger = &deref(v)[after..n];\n  \
+             split_bound(v: smaller);\n  split_bound(v: larger);\n",
+        ),
+        subdivision(
+            "shared_inline",
+            "  shared_inline(v: &deref(v)[0_u64..p]);\n  shared_inline(v: &deref(v)[p..n]);\n",
+        ),
+        subdivision(
+            "shared_bound",
+            "  let smaller = &deref(v)[0_u64..p];\n  let larger = &deref(v)[p..n];\n  \
+             shared_bound(v: smaller);\n  shared_bound(v: larger);\n",
+        ),
+    ]
+    .join("\n");
+    let spellings = [
+        "split_inline",
+        "split_bound",
+        "shared_inline",
+        "shared_bound",
+    ];
+    let table = permission_of_with_discharged_query(
+        source.as_bytes(),
+        &spellings.map(|name| (name, RangeSeparationOrdering::LeftBeforeRight)),
+    );
+    for name in spellings {
+        assert_eq!(
+            pair_of(&table, name, name, name).verdict,
+            PermissionVerdict::PermittedEligible,
+            "{name}"
+        );
+    }
+}
+
+/// [PAR-1, OWN-7] the negative control of the case above: `[0..p+1)` and
+/// `[p..n)` share element `p`, and evaluating the inline formations before
+/// the first call must not separate them in either spelling.
+#[test]
+fn overlapping_ranges_formed_at_the_call_are_denied_in_both_spellings() {
+    let source = [
+        PARTITION_HELPER.to_owned(),
+        subdivision(
+            "overlap_inline",
+            "  overlap_inline(v: &deref(v)[0_u64..after]);\n  overlap_inline(v: &deref(v)[p..n]);\n",
+        ),
+        subdivision(
+            "overlap_bound",
+            "  let smaller = &deref(v)[0_u64..after];\n  let larger = &deref(v)[p..n];\n  \
+             overlap_bound(v: smaller);\n  overlap_bound(v: larger);\n",
+        ),
+    ]
+    .join("\n");
+    let table = permission_of(source.as_bytes());
+    for name in ["overlap_inline", "overlap_bound"] {
+        let pair = pair_of(&table, name, name, name);
+        let Denial::Footprint { kind, .. } = denial(pair, 1) else {
+            panic!("{name}: the shared element must deny: {:?}", pair.verdict);
+        };
+        assert_eq!(kind.halves(), ("write", "write"), "{name}");
+    }
+}
+
+/// [PAR-1] interprets both statements' paths in the state before the first,
+/// so an endpoint the first statement writes has no value there. Here the
+/// first statement both writes `[0..p)` and replaces `q`, which held `p`
+/// before it; the callee's `ensures` makes the new `q` zero, so the second
+/// statement's `[q..n)` covers `[0..p)`. Reading `q` as it was before the
+/// first statement would prove `p <= q` and separate them. The retained
+/// question must stay undischarged, and the denial is the overlap of the two
+/// ranges themselves rather than the later read of `q`.
+#[test]
+fn an_endpoint_the_first_statement_writes_is_not_read_before_it() {
+    let source = r#"fn stamp_at(part: &[u8]) -> result: u64 writes(part) contract {
+  ensures result <= 0_u64;
+} {
+  if 0_u64 < deref(part).len {
+    set deref(part)[0_u64] = 9_u8;
+  }
+  return 0_u64;
+}
+
+fn rebound(v: &[u8], p: u64) -> result: u64 writes(v) contract {
+  requires p <= deref(v).len;
+} {
+  let n = deref(v).len;
+  let q = p;
+  set q = stamp_at(part: &deref(v)[0_u64..p]);
+  let b = stamp_at(part: &deref(v)[q..n]);
+  return b;
+}
+"#;
+    let combined = [MARKER.as_bytes(), source.as_bytes()].concat();
+    let table = with_semantics(&combined, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("permission fixture must check: {outcome:?}");
+        };
+        for function in &program.data.functions {
+            super::entailment::validate_derivations(&function.entailment);
+        }
+        let function = program
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "rebound")
+            .expect("rebound is checked");
+        let proofs = &function.entailment.permission_separations;
+        assert!(
+            !proofs.is_empty() && proofs.iter().all(|proof| !proof.discharged),
+            "the range pair must be asked and left undischarged: {proofs:?}"
+        );
+        program.data.permission.clone()
+    });
+    let pair = pair_of(&table, "rebound", "a set statement", "stamp_at");
+    let Denial::Footprint { kind, .. } = denial(pair, 1) else {
+        panic!("the replaced endpoint must deny: {:?}", pair.verdict);
     };
     assert_eq!(kind.halves(), ("write", "write"));
 }

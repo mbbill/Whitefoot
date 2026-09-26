@@ -1032,16 +1032,48 @@ fn formal_compute_quadrature_matches_postorder_and_analytic_oracles_on_a_worker(
     );
 }
 
+/// `range_split.wf` binds its two child ranges before passing them. The same
+/// program with the child ranges formed at the two calls names the same
+/// storage [REF-4], so [PAR-1] permits the same adjacent recursive calls and
+/// each spelling hands the recursive call itself out. Its loop splits publish
+/// in either spelling, so the recursive call's own thunk is what separates a
+/// handed-out recursion from a denied one. Both spellings then restore the
+/// parent access with no pool and with four workers.
 #[test]
 fn recursive_child_ranges_restore_parent_access() {
-    let source = include_bytes!("../../../../tests/programs/compute/range_split.wf");
-    let llvm = compile(source);
-    let output = compile_and_run(&llvm);
+    let bound = include_str!("../../../../tests/programs/compute/range_split.wf");
+    let inline = bound.replace(
+        "  let left = &deref(output)[0_u64..middle];\n  \
+         let right = &deref(output)[middle..count];\n  \
+         let a = fill_recursive(output: left, depth: remaining);\n  \
+         let b = fill_recursive(output: right, depth: remaining);\n",
+        "  let a = fill_recursive(output: &deref(output)[0_u64..middle], depth: remaining);\n  \
+         let b = fill_recursive(output: &deref(output)[middle..count], depth: remaining);\n",
+    );
+    assert_ne!(inline, bound, "range_split.wf binds its child ranges first");
+    let output = compile_and_run(&compile(bound.as_bytes()));
     assert!(output.status.success(), "{output:?}");
-    let parallel = emit_with_overlap(source);
-    assert!(parallel.contains("call void @wf__par_publish("));
-    let output = compile_and_run(&parallel);
-    assert!(output.status.success(), "{output:?}");
+    for (spelling, source) in [("bound", bound), ("inline", inline.as_str())] {
+        let parallel = emit_with_overlap(source.as_bytes());
+        let recursion = super::parallel::function_body(&parallel, "@wf__par_budget_fill_recursive");
+        assert!(
+            recursion.contains(", ptr @wf__par_thunk_fill_recursive."),
+            "{spelling}: the recursive call must be handed out:\n{recursion}"
+        );
+        let directory = test_directory();
+        let executable = build_executable(&parallel, &directory);
+        for workers in ["1", "4"] {
+            let output = Command::new(&executable)
+                .env("WF_WORKERS", workers)
+                .output()
+                .expect("run the recursive range split");
+            assert!(
+                output.status.success(),
+                "{spelling} WF_WORKERS={workers}: {output:?}"
+            );
+        }
+        std::fs::remove_dir_all(directory).expect("remove the recursive range split image");
+    }
 }
 
 /// A write through a range reference reaches the original local storage and
