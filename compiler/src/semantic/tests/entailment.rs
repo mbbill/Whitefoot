@@ -8566,7 +8566,7 @@ fn main() -> status: std::process::ExitStatus pure {
 "#;
     // Both terms are parameters no event of `read` writes, so the repair
     // offers the requirement that holds at entry and reaches the access
-    // [DIAG-1]; its complete sentence is pinned in `driver::pinned_sentences`.
+    // [DIAG-1]; its complete sentence is pinned in `driver::pinned_repairs`.
     assert_rule_kind(source, SemanticRule::Op4, |kind| {
         matches!(
             kind,

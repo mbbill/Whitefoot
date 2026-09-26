@@ -1197,18 +1197,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         declaration: DeclarationId,
         name: &str,
     ) -> String {
-        let module = self
-            .resolved
-            .declaration(declaration)
-            .and_then(crate::DeclarationRecord::module)
-            .and_then(|module| {
-                self.resolved
-                    .syntax()
-                    .classified_bundle()
-                    .source_bundle()
-                    .module(module)
-            });
-        match module {
+        match self.declaring_module(declaration) {
             Some(module) if module.package() == crate::Package::Standard => {
                 format!("std.{}.{name}", module.path().join("."))
             }
@@ -1217,6 +1206,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             _ => name.to_owned(),
         }
+    }
+
+    /// The module whose records declare a declaration; `None` for a PRE-1
+    /// declaration and in a source bundle [MOD-3].
+    pub(in crate::semantic::check) fn declaring_module(
+        &self,
+        declaration: DeclarationId,
+    ) -> Option<&crate::ModuleRecord> {
+        self.resolved
+            .declaration(declaration)
+            .and_then(crate::DeclarationRecord::module)
+            .and_then(|module| {
+                self.resolved
+                    .syntax()
+                    .classified_bundle()
+                    .source_bundle()
+                    .module(module)
+            })
     }
 
     /// The concrete function ids of a substitution's function-kind actuals

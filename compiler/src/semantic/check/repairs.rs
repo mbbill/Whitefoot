@@ -19,6 +19,11 @@
 //! that is no term [ENT-2], such as an element read, admits none of these
 //! until a `let` binds it, so that binding is its repair.
 //!
+//! The words of [TYPE-2]'s refusals of an opaque struct's construction and
+//! destructuring live here too. They turn on where the struct comes from and,
+//! for a cell, on its content, since only those decide which source change
+//! can be carried out.
+//!
 //! The sentences live here, in one place, so that wording can follow evidence
 //! from agents without touching the judgments that select them.
 
@@ -900,5 +905,95 @@ pub(super) fn loop_invariant_backedge(disposition: Disposition, name: &str) -> S
         Disposition::Unproved => format!(
             "`{name}` is not proved preserved at the next loop header: strengthen the invariant prefix, weaken or correct it, or establish in the body the facts from which every reachable fallthrough preserves it"
         ),
+    }
+}
+
+/// Where an opaque struct that a constructor `call` or a destructuring `let`
+/// names comes from, which selects the repair of its refusal [TYPE-2].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum OpaqueStruct {
+    /// A host handle: a standard library module declares it with no fields,
+    /// and only a host function forms one [PRE-2]. `linear` when its
+    /// declaration writes `nodrop`, so that it leaves a scope only by moving
+    /// out [PROV-6].
+    HostHandle { linear: bool },
+    /// An opaque struct the program declares, which never has a value.
+    Program,
+}
+
+/// A program's own opaque struct has a value once its declaration drops the
+/// modifier [TYPE-2]. Outside the declaring module, the construct then meets
+/// [MOD-5]'s judgment of the fields it gives or binds, whose own repair names
+/// them.
+const PROGRAM_OPAQUE_STRUCT: &str = "no value of an opaque struct the program declares is ever formed [TYPE-2]: remove `opaque` from its declaration";
+
+/// [TYPE-2] a constructor `call` naming an opaque struct a module declares.
+/// Every host handle comes from a host function of its module, or from the
+/// program's entry in `std::process::Inputs` [PRE-2], so the one alternative
+/// names both sources.
+pub(super) fn opaque_struct_constructed(opaque: OpaqueStruct) -> &'static str {
+    match opaque {
+        OpaqueStruct::HostHandle { .. } => {
+            "a host handle is formed only by a host function [PRE-2]: replace this construction with a handle that a function of its module returns or that the program's entry receives"
+        }
+        OpaqueStruct::Program => PROGRAM_OPAQUE_STRUCT,
+    }
+}
+
+/// [TYPE-2] a destructuring `let` naming an opaque struct a module declares.
+/// A host handle has nothing to take apart, so the statement goes; a `nodrop`
+/// one is then still owed its closing call [PROV-6].
+pub(super) fn opaque_struct_taken_apart(opaque: OpaqueStruct) -> &'static str {
+    match opaque {
+        OpaqueStruct::HostHandle { linear: false } => {
+            "a host handle has no fields to take apart [PRE-2]: remove this statement"
+        }
+        OpaqueStruct::HostHandle { linear: true } => {
+            "a host handle has no fields to take apart [PRE-2], and a `nodrop` one leaves its scope only by moving out [PROV-6]: replace this statement with a call to the function of its module that closes the handle"
+        }
+        OpaqueStruct::Program => PROGRAM_OPAQUE_STRUCT,
+    }
+}
+
+/// What a cell's content is, which selects how a statement that takes the
+/// cell apart reaches the content instead [TYPE-9].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum CellContent {
+    /// A copy value, which is read in place and never moved [OWN-1].
+    Copy,
+    /// A value without copy other than a runtime-capacity shape, which moves
+    /// out and frees the cell [WIN-3].
+    Owned,
+    /// A runtime-capacity shape, which never leaves its cell [TYPE-9].
+    RuntimeCapacity,
+    /// A content without copy in a cell a reference reaches, which nothing
+    /// moves out of [OWN-1], so it is used in place.
+    Borrowed,
+}
+
+/// [TYPE-2, TYPE-9] a destructuring `let` naming `Box`. `cell` is the
+/// consumed place as written and `binder` the name the statement binds, when
+/// it binds one. `content` is `None` when the place selects no cell the
+/// checker can type.
+pub(super) fn cell_taken_apart(
+    content: Option<CellContent>,
+    cell: &str,
+    binder: Option<&str>,
+) -> String {
+    const INNER: &str = "a cell's content is its member `inner` [TYPE-9]";
+    match (content, binder) {
+        (Some(CellContent::Copy), Some(name)) => {
+            format!("{INNER}: replace this statement with `let {name} = {cell}.inner;`")
+        }
+        (Some(CellContent::Owned), Some(name)) => format!(
+            "{INNER}: replace this statement with `let {name} = move {cell}.inner;`, which frees the cell [WIN-3]"
+        ),
+        (Some(CellContent::RuntimeCapacity), Some(name)) => format!(
+            "{INNER}, and a runtime-capacity content never leaves it: remove this statement, and write `{cell}.inner` where `{name}` is used and `move {cell}` where `{name}` is moved [OP-14]"
+        ),
+        (Some(CellContent::Borrowed), Some(name)) => format!(
+            "{INNER}, and nothing moves out of a cell a reference reaches [OWN-1]: remove this statement, and write `{cell}.inner` where `{name}` is used"
+        ),
+        (None, _) | (_, None) => format!("{INNER}: remove this statement"),
     }
 }

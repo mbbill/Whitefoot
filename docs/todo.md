@@ -360,21 +360,49 @@ rarely insert at the same place.
   repair-wording and one-argument-row changes; reopen with the owner's
   direction.
 
-- **The opaque-struct repair offers a construction that cannot exist.**
-  TYPE-2 refuses a constructor `call` or a destructuring `let` of an opaque
-  struct, and the compiler's repair at both sites
-  (`check/expressions.rs`, `check/control/results.rs`) is "build it with a
-  construction function [OP-13, PRE-1]". Since the standard library moved
-  the host declarations into std modules, a host handle such as
-  `std::io::HandleFactory` is formed only by a host function of its module
-  [PRE-2], and an opaque struct a program declares has no value at all, so
-  for those the alternative cannot be carried out, against DIAG-1; for
-  destructuring it names construction at all. Choose the words by the
-  struct's home: a host handle points to the host functions of its module
-  and the entry's inputs, a program's own opaque struct to its declaration,
-  a `Box` to its `inner` member. Validate each with a pinned repair pair.
-  Found in the review of the standard-library merge; reopen with the next
-  diagnostics change or when an agent is seen following the wrong repair.
+- **Most repairs outside the goal families have no pinned pair.**
+  `compiler/diagnostic-repairs` pins every repair with its rejected source
+  and a program for each alternative, and keeps the words in one module;
+  `driver::pinned_repairs` holds 66 pairs, nearly all for goals, effect rows
+  and TYPE-2's opaque-struct refusals, while most of the eighty-odd sites
+  across the checker that print a fixed repair sentence have none. Among
+  them are TYPE-2's "build it with a construction function [OP-13]" for a
+  storage shape or a cell, OWN-1's "write `move p` for the affine place" and
+  "use the copy place without `move`", and TYPE-9's inline-shape and
+  content-move repairs. Some cannot be carried out as written: TYPE-9's
+  content-move repair writes `free_empty(move b)` without the argument name
+  GRAM-11 requires and offers the cell's scope-exit release to a content
+  whose elements are linear, and PROV-6's partial-consume repair writes the
+  placeholder `let N(f: a, ...) = move v;`. Pin each with a program per
+  alternative, rewording those that fail, and move the sentences into
+  `check/repairs.rs`; validate by the pair test. Found in the review of the
+  opaque-struct repair; reopen with the next diagnostics change or when an
+  agent follows an unpinned repair that fails.
+
+- **Taking a storage shape apart is refused as a type mismatch.**
+  `let Slots(len: l, cap: c) = move w;`, and the same statement naming
+  `Array` or `Ring`, is rejected with TYPE-5 "found: a value of another type"
+  by `destructuring_shape_rejection` in `check/control/results.rs`, because
+  among the prelude's containers only `Box` reaches the TYPE-2 refusal there.
+  TYPE-9 makes a destructuring `let` naming any of the four a TYPE-2 refusal
+  with a repair, and no conformance case covers the three shapes. Refuse them
+  under TYPE-2 at the complete statement with a repair that reads the
+  measures as fields (`let l = w.len;`), pinned, and add a negative case per
+  shape. Found in the review of the opaque-struct repair; reopen with the
+  next change to destructuring or to the storage shapes.
+
+- **A field of a program's opaque struct cannot be read.** TYPE-2 says an
+  opaque struct's fields obey the ordinary field, ownership and release
+  rules, but the checker gives a source opaque struct the fieldless
+  `CheckedNominalKind::Opaque` (`compiler/src/semantic/model.rs`), so
+  `token.value` and `deref(token).value` on a parameter of a program's
+  `opaque struct Token { value: u64; }` are rejected with TYPE-5. No value of
+  such a struct is ever formed, so only functions no call can reach with a
+  value are refused, and host handles have no fields. Give the kind its
+  declared fields for reads, writes and moves out; validate with an accepted
+  read, write and move out on such a parameter. Found in the review of the
+  opaque-struct repair; reopen when a program has a reason to declare an
+  opaque struct with fields, or with the next change to nominal kinds.
 
 - **An index beside a window's `last` is never separated at a call.** WIN-2
   separates a live `r[i]` from `r.last` once `i != r.len - 1` is proved, and
@@ -1377,7 +1405,7 @@ rarely insert at the same place.
   every file named here is under 4,000 lines.
 
 - **The checker's program pass shares one file with its signature and goal
-  code.** `compiler/src/semantic/check.rs` has 4,349 lines, 3,597 of them in
+  code.** `compiler/src/semantic/check.rs` has 4,633 lines, 3,830 of them in
   one `impl Checker` block; the modular compilation work added about 600
   (module inventories, supplied function actuals, receipt wiring). `check/`
   already holds sibling `impl Checker` files, so the split moves methods, not
