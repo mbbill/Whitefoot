@@ -26,11 +26,19 @@ impl ModuleView<'_> {
             .map_or_else(|| "pkg".to_owned(), crate::ModuleRecord::qualified_name)
     }
 
-    fn find(&self, path: &[String]) -> Option<crate::ModuleId> {
+    fn find(&self, package: crate::Package, path: &[String]) -> Option<crate::ModuleId> {
         self.modules
             .iter()
-            .position(|module| module.path() == path)
+            .position(|module| module.is_at(package, path))
             .and_then(crate::ModuleId::from_index)
+    }
+
+    /// The package a module belongs to; a source bundle's root module is the
+    /// program's own [MOD-10].
+    fn package(&self, module: crate::ModuleId) -> crate::Package {
+        self.modules
+            .get(module.index())
+            .map_or(crate::Package::Program, crate::ModuleRecord::package)
     }
 
     /// [MOD-5] a source may name its own module and the modules its graph
@@ -55,10 +63,10 @@ fn segment_origin(use_origin: &SourceOrigin, segment: &PathSegment) -> SourceOri
 }
 
 fn written_path(qualifier: &Qualifier, last: &str) -> String {
-    let mut text = qualifier
-        .alias_root
-        .as_ref()
-        .map_or_else(|| "pkg".to_owned(), |root| root.spelling.clone());
+    let mut text = qualifier.alias_root.as_ref().map_or_else(
+        || if qualifier.standard { "std" } else { "pkg" }.to_owned(),
+        |root| root.spelling.clone(),
+    );
     for segment in &qualifier.segments {
         text.push_str("::");
         text.push_str(&segment.spelling);
@@ -70,9 +78,11 @@ fn written_path(qualifier: &Qualifier, last: &str) -> String {
     text
 }
 
-/// Resolves the module prefix of a qualified use [MOD-5]: a `pkg` root or a
-/// file-local module alias, then each lowercase segment. The resolved module
-/// must be the use's own module or a direct dependency of it.
+/// Resolves the module prefix of a qualified use [MOD-5]: a `pkg` root, which
+/// names the use's own package, a `std` root, which names the standard
+/// library from every other package [MOD-10], or a file-local module alias,
+/// then each lowercase segment. The resolved module must be the use's own
+/// module or a direct dependency of it.
 #[allow(clippy::too_many_arguments)]
 fn resolve_module_prefix(
     scopes: &ScopeBuild,
@@ -84,6 +94,19 @@ fn resolve_module_prefix(
     use_record: &UseMeta,
 ) -> Result<Result<crate::ModuleId, ResolutionIssue>, ResolutionCompilerFailure> {
     let mut path = Vec::new();
+    let mut package = modules.package(use_record.module);
+    if qualifier.alias_root.is_none() && qualifier.standard {
+        if package == crate::Package::Standard {
+            return Ok(Err(ResolutionIssue {
+                rule: ResolutionRule::Mod10,
+                origin: use_record.origin.clone(),
+                kind: ResolutionIssueKind::LibraryNamesItself {
+                    path: written_path(qualifier, ""),
+                },
+            }));
+        }
+        package = crate::Package::Standard;
+    }
     if let Some(root) = &qualifier.alias_root {
         let alias = index
             .with_spelling(&root.spelling)
@@ -102,15 +125,12 @@ fn resolve_module_prefix(
                 },
             }));
         };
-        path.extend(
-            modules
-                .modules
-                .get(module.index())
-                .ok_or(ResolutionCompilerFailure::InvalidScopeTree)?
-                .path()
-                .iter()
-                .cloned(),
-        );
+        let record = modules
+            .modules
+            .get(module.index())
+            .ok_or(ResolutionCompilerFailure::InvalidScopeTree)?;
+        package = record.package();
+        path.extend(record.path().iter().cloned());
     }
     path.extend(
         qualifier
@@ -118,7 +138,7 @@ fn resolve_module_prefix(
             .iter()
             .map(|segment| segment.spelling.clone()),
     );
-    let Some(module) = modules.find(&path) else {
+    let Some(module) = modules.find(package, &path) else {
         let origin = qualifier
             .segments
             .last()
@@ -756,6 +776,16 @@ pub(super) fn resolve_alias_targets(
         )?;
         match target {
             Err(AliasRefusal::Target(reason)) => issues.push((record_index, refuse(reason))),
+            Err(AliasRefusal::OwnLibrary) => issues.push((
+                record_index,
+                ResolutionIssue {
+                    rule: ResolutionRule::Mod10,
+                    origin: origin.clone(),
+                    kind: ResolutionIssueKind::LibraryNamesItself {
+                        path: written_path(qualifier, ""),
+                    },
+                },
+            )),
             Err(AliasRefusal::Edge(target_module)) => issues.push((
                 record_index,
                 ResolutionIssue {
@@ -789,6 +819,9 @@ enum AliasRefusal {
     /// The path's registered module is one the alias's module may not name
     /// [MOD-5].
     Edge(crate::ModuleId),
+    /// A standard library record writes `std`, where the library names
+    /// itself `pkg` [MOD-10].
+    OwnLibrary,
 }
 
 /// Resolves an alias path in order: a registered module, one the alias's
@@ -819,9 +852,18 @@ fn alias_target(
         .collect();
     let is_type = |name: &str| name.as_bytes().first().is_some_and(u8::is_ascii_uppercase);
     let first_type = names.iter().position(|name| is_type(name));
+    let alias_package = modules.package(alias_module);
+    if qualifier.standard && alias_package == crate::Package::Standard {
+        return Ok(Err(AliasRefusal::OwnLibrary));
+    }
+    let package = if qualifier.standard {
+        crate::Package::Standard
+    } else {
+        alias_package
+    };
     let module_of = |path: &[&str]| {
         let path: Vec<String> = path.iter().map(|name| (*name).to_owned()).collect();
-        modules.find(&path)
+        modules.find(package, &path)
     };
     let declaration_in = |module: crate::ModuleId, name: &str, wanted: &[DeclarationClass]| {
         let inventory = scopes.module_scope(module)?;

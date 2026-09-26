@@ -14,6 +14,7 @@ mod backend;
 mod driver;
 mod graph;
 mod lexer;
+mod library;
 mod lowering;
 mod prelude;
 mod resolution;

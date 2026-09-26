@@ -645,6 +645,7 @@ fn classify_node(
             if let Some(role) = roles.last_mut() {
                 role.qualifier = Some(Qualifier {
                     alias_root: None,
+                    standard: has_fixed_terminal(classified, direct, FixedTerminal::Std),
                     segments,
                 });
             }
@@ -1011,6 +1012,7 @@ fn add_path_use(
         .get(path.index())
         .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
     let pkg_rooted = has_fixed_terminal(classified, direct, FixedTerminal::Pkg);
+    let standard = has_fixed_terminal(classified, direct, FixedTerminal::Std);
     let names: Vec<_> = direct
         .iter()
         .copied()
@@ -1019,7 +1021,7 @@ fn add_path_use(
     let Some((last, prefix)) = names.split_last() else {
         return Err(ResolutionCompilerFailure::InvalidRoleShape);
     };
-    let (alias_root, segments) = if pkg_rooted {
+    let (alias_root, segments) = if pkg_rooted || standard {
         (None, prefix)
     } else {
         let Some((root, segments)) = prefix.split_first() else {
@@ -1029,6 +1031,7 @@ fn add_path_use(
     };
     let qualifier = Qualifier {
         alias_root,
+        standard,
         segments: segments
             .iter()
             .map(|terminal| path_segment(classified, *terminal))
@@ -1113,7 +1116,8 @@ fn classify_callee(
     let mut alias_root = None;
     let mut segment_terminals = Vec::new();
     let mut tail = callee;
-    if has_fixed_terminal(classified, callee_direct, FixedTerminal::Pkg) {
+    let standard = has_fixed_terminal(classified, callee_direct, FixedTerminal::Std);
+    if standard || has_fixed_terminal(classified, callee_direct, FixedTerminal::Pkg) {
         qualified = true;
         tail = child_with(topology, callee, Production::CalleePath)
             .ok_or(ResolutionCompilerFailure::InvalidRoleShape)?;
@@ -1141,6 +1145,7 @@ fn classify_callee(
             alias_root: alias_root
                 .map(|root| path_segment(classified, root))
                 .transpose()?,
+            standard,
             segments: segment_terminals
                 .iter()
                 .map(|terminal| path_segment(classified, *terminal))

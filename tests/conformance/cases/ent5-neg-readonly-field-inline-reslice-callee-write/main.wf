@@ -1,5 +1,7 @@
-alias kinds = pkg::kinds;
 alias Entry = pkg::kinds::Entry;
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+alias kinds = pkg::kinds;
 
 fn clobber(v: &[Entry], at: u64) -> result: unit writes(v) contract {
   requires at < deref(v).len;

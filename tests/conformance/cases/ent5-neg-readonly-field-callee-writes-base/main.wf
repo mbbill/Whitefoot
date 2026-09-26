@@ -1,5 +1,7 @@
-alias kinds = pkg::kinds;
 alias Entry = pkg::kinds::Entry;
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+alias kinds = pkg::kinds;
 
 fn widen(xs: &Array<Entry, 4>, i: u64) -> result: unit writes(xs) contract {
   requires i < 4_u64;

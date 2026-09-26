@@ -1,3 +1,6 @@
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
 fn main() -> status: ExitStatus pure {
   let values = pkg::vec::grow_vector_new::<u64, 8>();
   let length = pkg::wrap::push_one::<u64, 8>(values: &values, value: 1_u64);

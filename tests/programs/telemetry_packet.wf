@@ -1,3 +1,6 @@
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
 fn store_u32_be(out: &[u8], offset: u64, value: u32) -> result: Result<unit, NarrowError> writes(out) {
   doc "Four big-endian bytes land in the caller's range reference; its len is the range's own measure [REF-4, MSR-1].";
   let first_word = ishr.wrap(value, 24_u32);

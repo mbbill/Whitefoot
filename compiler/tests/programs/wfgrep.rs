@@ -637,7 +637,7 @@ fn the_search_uses_ordinary_file_and_directory_calls() {
         "read_at",
     ] {
         assert!(
-            llvm.contains(&format!("call void @wf_{name}(")),
+            llvm.contains(&format!("call void @wf_std.fs.{name}(")),
             "the search must call the ordinary {name} declaration"
         );
     }

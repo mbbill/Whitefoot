@@ -1,4 +1,6 @@
+alias ExitStatus = std::process::ExitStatus;
 alias Sign = pkg::data::Sign;
+alias exit_status = std::process::exit_status;
 
 fn code_of(sign: Sign) -> code: u8 pure {
   doc "Zero for a positive sign.";

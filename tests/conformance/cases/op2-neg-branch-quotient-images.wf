@@ -1,3 +1,6 @@
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
 fn branch_half(count: u64, choose_left: Bool) -> result: u64 pure {
   let quotient = if choose_left {
     let left = count / 2_u64;

@@ -1,4 +1,6 @@
+alias ExitStatus = std::process::ExitStatus;
 alias Pair = pkg::data::Pair;
+alias exit_status = std::process::exit_status;
 
 fn touch(pair: &Pair) -> result: unit writes(pair.right) {
   return unit;

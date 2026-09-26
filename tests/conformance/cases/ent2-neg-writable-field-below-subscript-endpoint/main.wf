@@ -1,5 +1,7 @@
-alias kinds = pkg::kinds;
 alias Entry = pkg::kinds::Entry;
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+alias kinds = pkg::kinds;
 
 fn main() -> status: ExitStatus pure {
   doc "ENT-2: a subscripted place is a term only when its final step selects a readonly field. weight is writable, so entries[1].weight is no clause (b) term and the endpoint is rejected with the let-binding restructuring.";

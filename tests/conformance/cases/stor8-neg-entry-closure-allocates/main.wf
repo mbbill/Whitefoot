@@ -1,3 +1,6 @@
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
 fn boxed() -> result: u8 pure {
   let cell = box_new::<u8>(value: 1_u8);
   return 0_u8;

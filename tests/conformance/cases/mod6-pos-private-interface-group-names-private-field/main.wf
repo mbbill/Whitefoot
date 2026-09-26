@@ -1,3 +1,6 @@
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
 fn apply(input: &Pair) -> result: unit reads(input.left), writes(input.right) {
   doc "A private interface group is module implementation, so its formals may name the module's private fields.";
   let observed = deref(input).left;

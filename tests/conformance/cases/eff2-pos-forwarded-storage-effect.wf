@@ -1,3 +1,6 @@
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
 fn write(out: &Slots<u8, 8>) -> result: unit writes(out) {
   doc "Writes one element behind its reference parameter; writes(out) subsumes reads(out), so the pair is never written for one path [EFF-1].";
   let spare = deref(out).len;

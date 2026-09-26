@@ -547,10 +547,10 @@ fn the_reused_buffers_are_initialized_once_at_allocation() {
             continue;
         };
         for transfer in [
-            "@wf_open_read(",
-            "@wf_read_at(",
-            "@wf_write_once(",
-            "@wf_directory_next(",
+            "@wf_std.fs.open_read(",
+            "@wf_std.fs.read_at(",
+            "@wf_std.io.write_once(",
+            "@wf_std.fs.directory_next(",
         ] {
             let Some(first) = function.find(transfer) else {
                 continue;

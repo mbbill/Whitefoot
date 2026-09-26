@@ -1,4 +1,4 @@
-# Kernel Specification v0.71
+# Kernel Specification v0.72
 
 Rule IDs are stable; diagnostics cite rule IDs.
 
@@ -177,7 +177,7 @@ item         := alias_decl
               | const_decl )
               | fn_decl | struct_decl | enum_decl | interface_decl | binding_decl | const_decl
               | heap_decl
-alias_decl   := "alias" (IDENT | TYPEID) "=" "pkg" ("::" (IDENT | TYPEID))* ";"
+alias_decl   := "alias" (IDENT | TYPEID) "=" ("pkg" | "std") ("::" (IDENT | TYPEID))* ";"
 heap_decl    := "program" "no_heap" ";"
 struct_decl  := "opaque"? ("nocopy" | "nodrop")? "struct" TYPEID generics? "{" doc? field* "}"
 field        := "public"? "readonly"? IDENT ":" type ";"
@@ -212,7 +212,7 @@ param_list   := param ("," param)*
 param        := IDENT ":" (type | "&" (type | "[" type "]"))
 graph_file   := module_row+ entry_decl*
 module_row   := module_path ":" "[" (module_path ("," module_path)*)? "]" ";"
-module_path  := "pkg" ("::" IDENT)*
+module_path  := ("pkg" | "std") ("::" IDENT)*
 entry_decl   := "entry" IDENT "=" module_path (";" | "{" "no_heap" ";" "}")
 ```
 
@@ -225,7 +225,7 @@ What the declaration means is [STOR-8]'s.
 ```wf-ebnf GRAM-3
 type   := "i8"|"i16"|"i32"|"i64"|"u8"|"u16"|"u32"|"u64"|"f32"|"f64"|"unit"
         | TYPEID targs? | type_path targs?
-type_path := ("pkg" | IDENT) "::" (IDENT "::")* TYPEID
+type_path := ("pkg" | "std" | IDENT) "::" (IDENT "::")* TYPEID
 rtype  := type
 targs  := "<" targ ("," targ)* ">"
 targ   := type | const | function_arg
@@ -288,7 +288,7 @@ infix_op       := "+" | "+wrap" | "+defined" | "+checked" | "+sat"
 compare_op     := "==" | "!=" | "<" | "<=" | ">" | ">="
 atom           := literal | "move" place | place | borrow_expr
 call           := "musttail"? callee ("::" targs)? "(" ( atom_list | fieldinit_list )? ")"
-callee         := OPNAME | IDENT ("::" callee_path)? | "pkg" "::" callee_path
+callee         := OPNAME | IDENT ("::" callee_path)? | ("pkg" | "std") "::" callee_path
                 | pack_use ("::" (IDENT | TYPEID))?
 callee_path    := IDENT ("::" callee_path)? | pack_use ("::" (IDENT | TYPEID))?
 fieldinit_list := fieldinit ("," fieldinit)*
@@ -396,7 +396,7 @@ The four are ordinary nominals of the nominal-type TYPEID domain [TYPE-6], writt
 In this specification's prose `N` stands for a written const argument; source writes a `const` IDENT, lowercase under [FORM-3], as the [PRE-1] rows do.
 `Slots`, `Ring`, and `Box` are declared `nocopy`, so their values are affine unless an element or content type makes them linear, and an `Array` has exactly the capabilities of its element type [OWN-1, PROV-6].
 A `struct` or `enum` declaration may carry one capability modifier [GRAM-2]: `nodrop`, which states a logical must-consume obligation on values of that nominal in every scope, or `nocopy`, which makes its values non-duplicable although every part could be copied; neither changes a component, layout, or construction route [OWN-1, PROV-6].
-A `struct` declaration may carry the `opaque` modifier [GRAM-2], written before a capability modifier when both are present: an opaque struct has fields and no usable constructor. Its constructor entry [TYPE-6] exists to be refused: a constructor `call` whose leading TYPEID names an opaque struct is a hard error citing TYPE-2 at the complete `call`, and a destructuring `let_stmt` whose TYPEID names one is a hard error citing TYPE-2 at the complete `let_stmt`, each with the restructuring `build it with a construction function [OP-13, PRE-1]`. Its fields obey the ordinary field, ownership, and release rules [OWN-1, PROV-6, STOR-3], and a `move` out of one of its fields is the ordinary [WIN-3] consume. No source-declared opaque struct has a construction function, so a value of one is never formed; the prelude declares the three storage shapes, `Box<T>`, and every host handle as opaque structs and supplies their construction rows [PRE-1].
+A `struct` declaration may carry the `opaque` modifier [GRAM-2], written before a capability modifier when both are present: an opaque struct has fields and no usable constructor. Its constructor entry [TYPE-6] exists to be refused: a constructor `call` whose leading TYPEID names an opaque struct is a hard error citing TYPE-2 at the complete `call`, and a destructuring `let_stmt` whose TYPEID names one is a hard error citing TYPE-2 at the complete `let_stmt`, each with the restructuring `build it with a construction function [OP-13, PRE-1]`. Its fields obey the ordinary field, ownership, and release rules [OWN-1, PROV-6, STOR-3], and a `move` out of one of its fields is the ordinary [WIN-3] consume. A value of an opaque struct is formed only by a definition the build supplies: a construction row [OP-13] forms the three storage shapes and `Box<T>`, which the prelude declares [PRE-1], and a host function forms the host handles the host modules declare [PRE-2], so no other opaque struct ever has a value.
 A `field` may carry the `readonly` modifier [GRAM-2]; a source field carries it only together with `public` [MOD-6]. Inside the module that declares a source struct its readonly field is an ordinary field. Outside that module — and everywhere, for a PRE-1 struct's field — a path that ends at or passes through a readonly field is never a write target: a `set` whose target is such a path [SET-1], and an argument naming such a path at a reference parameter whose callee row writes that parameter [EFF-5], are each a hard error citing TYPE-2 at the complete target `place` or argument `atom`, with the restructuring `use the operation that changes it, or replace the whole value`. Construction gives a readonly field its value like any other field [GRAM-8], and a construction outside the declaring module supplies none [MOD-5]; a whole-value assignment replaces it together with its owner. Its value otherwise changes only through a compiler-owned [PRE-1] operation whose row declares `writes` of it [OP-10]; a declared row may name a readonly field in `writes`, because a row reports every change its callees make [EFF-2]. `readonly` states that the field is not assignable, not that its value is constant.
 
 [TYPE-3] Nameability: every constructible type, parameter kind and effect has a canonical, finite source spelling requiring no compiler execution [GRAM-3, EFF-1].
@@ -439,7 +439,7 @@ The grammar role, never an inferred type or expected result, selects the domain 
 |---|---|---|
 | lexical IDENT | top-level `fn_decl`; raw function-kind `gparam`; top-level `const_decl`; const `gparam`; `param`; `let_stmt`; `for_stmt` binder; arm `fieldbind` binders; `contract_define`; FN-9-owned result and route candidates; PRE-1 functions | a `callee` IDENT admits a top-level function, in-scope function parameter, or PRE-1 function; an unqualified `function_arg` or `fn_bind` right side admits an ordinary function or function parameter; `const` IDENT admits an in-scope const generic or a named const; `cvalue` IDENT admits a named const; `pbase` admits an in-scope runtime value binding, contract definition, admitted symbolic result datum, named const, or in-scope const generic [MSR-6] |
 | nominal-type TYPEID | source `struct_decl` and `enum_decl` names; source interface and binding groups; PRE-1 nominal types; lexical type `gparam`s overlay this domain while live | a runtime `type` or generic-numeric suffix admits only its ordinary type class; an explicit `targ` additionally admits a interface or binding abbreviation; a `pack_use` admits a interface or binding group, with FN-3/FN-5 checking its position and member selection |
-| constructor TYPEID | each source struct constructor under its struct TYPEID; PRE-1 variants, classified as struct-constructor or enum-variant; PRE-1 struct constructors; an opaque struct's constructor, existing only to be refused [TYPE-2] | the constructor TYPEID of a `call`, `cvalue` or destructuring `let_stmt` admits either class |
+| constructor TYPEID | each source struct constructor under its struct TYPEID; PRE-1 variants, classified as struct-constructor or enum-variant; an opaque struct's constructor, existing only to be refused [TYPE-2] | the constructor TYPEID of a `call`, `cvalue` or destructuring `let_stmt` admits either class |
 | numeric-bound TYPEID | the two built-in bounds `Int` and `Float` [PRE-1] | the bound TYPEID of a type `gparam`; a capability bound instead uses its fixed grammar spelling [GRAM-2, PROV-6] |
 | LABEL | an optional LABEL written by `loop_stmt` or `for_stmt` | an optional LABEL written by `break_stmt` |
 | invariant IDENT | names written by `header_invariant` and `invariant_stmt` | the IDENT premise alternative of `use_premise` |
@@ -606,7 +606,7 @@ A struct-typed const is laid out as one read-only static aggregate in the nomina
 
 [OWN-1] Every value has exactly one owner.
 A type has two capabilities, copy and drop, and its class is read from them: a type with both is *copy*, a type with drop alone is *affine*, and a type with neither is *linear* [PROV-6]; no type has copy without drop.
-Primitives (TYPE-1) have both. Every other type has a capability exactly when every part it owns has it [PROV-6] — its fields, its variant payload fields, its `Box` content, and the elements of a storage shape — and its declaration does not remove it [GRAM-2]: `nocopy` removes copy, and `nodrop` removes drop and copy with it. A tag-only enum and a struct of copy fields are therefore copy, `Bool` being the canonical case; the prelude declares `Slots`, `Ring`, `Box`, and every host handle `nocopy` or `nodrop` [PRE-1], so a type owning one of them is not copy, and an `Array` has the capabilities of its element type [TYPE-9].
+Primitives (TYPE-1) have both. Every other type has a capability exactly when every part it owns has it [PROV-6] — its fields, its variant payload fields, its `Box` content, and the elements of a storage shape — and its declaration does not remove it [GRAM-2]: `nocopy` removes copy, and `nodrop` removes drop and copy with it. A tag-only enum and a struct of copy fields are therefore copy, `Bool` being the canonical case; the prelude declares `Slots`, `Ring` and `Box` `nocopy` [PRE-1] and the host modules declare every host handle `nocopy` or `nodrop` [PRE-2], so a type owning one of them is not copy, and an `Array` has the capabilities of its element type [TYPE-9].
 A type parameter has the capabilities its bound grants [PROV-6], so a generic nominal's class is decided at each instance from its arguments.
 An affine or linear place rooted in a live own-mode binding is consumed exactly once by an explicit `move p`, by use as an own-place match scrutinee under [OWN-13], by use as the direct bare affine `Result<T, E>` place operand of `propagate` under [ERR-3], or by the `move place` of a destructuring consume [PROV-6].
 Every other bare `place` expression of affine type is a hard error, and `move p` on a copy value is a hard error (copy values are used bare — one spelling per meaning, FORM-1).
@@ -812,7 +812,7 @@ A `Slots` or `Ring` release is each element's compiler-derived release over its 
 A `const` item [CONST-2] is never released.
 Every other frame-resident owned value [STOR-1] has no release action.
 
-A prelude host handle [PRE-1] has no fields, so its release is empty; every other opaque struct [TYPE-2] takes the release its fields give it under this rule, `Box` the cell case above.
+A host handle [PRE-2] has no fields, so its release is empty; every other opaque struct [TYPE-2] takes the release its fields give it under this rule, `Box` the cell case above.
 An opaque struct's `nodrop` modifier, and only the ordinary ownership closure of [PROV-6], requires explicit consumption.
 No source declaration, annotation, attribute, contract, or binding attaches a finalizer or any other user-defined action to a value's release.
 
@@ -1183,11 +1183,11 @@ A `fn_decl` or `fn_sig` writes one result or a parenthesized list of two or more
 Each `result_binding` is one **result ordinal**, numbered from zero in written order; the list's binder spellings are distinct under [TYPE-6], and each ordinal receives every result judgment of this rule independently.
 A declaration that writes a list hands its ordinals back together, and a caller names them again only through a destructuring `let` binder list [GRAM-4, TYPE-5, CALL-4]; no expression position produces a result list, so a list-returning callee is bindable only by that form.
 This rule's remaining sentences are stated over a written result and read per ordinal where a declaration writes a list.
-The written templates are ordinary interface propositions. A Whitefoot definition proves them under FN-9; a PRE-1 definition is supplied under SCOPE-3. A caller consults only the declared finite summary and never the definition.
+The written templates are ordinary interface propositions. A Whitefoot definition proves them under FN-9; a PRE-1 or PRE-2 definition is supplied under SCOPE-3. A caller consults only the declared finite summary and never the definition.
 The written effect paths state which reference-parameter-supplied state the function observes or changes. The checker derives the exact same set from body accesses and calls and checks it in both directions under [EFF-2].
 Strengthening a requirement GoalTemplate or RelationTemplate is a caller-visible interface change.
 A generic function carries the same boundary with its written type, const, and function parameters, and each concrete [FN-2] instance substitutes them before its calls and body are re-checked.
-A `fn_sig` may carry the same requirement and postcondition templates. FN-4 checks their formation and refinement at binding; its selected ordinary definition supplies their proof under FN-9 or PRE-1.
+A `fn_sig` may carry the same requirement and postcondition templates. FN-4 checks their formation and refinement at binding; its selected ordinary definition supplies their proof under FN-9, PRE-1 or PRE-2.
 Function-signature visibility is the [TYPE-6] table.
 Every explicit `return e1, ..., en;` writes exactly as many expressions as the enclosing declaration writes results, and expression i must produce exactly result ordinal i's `rtype`; there is no result-mode or result-type conversion [TYPE-4].
 A written count other than the declared result count is a hard error citing FN-1 at the `return_stmt` node.
@@ -1270,7 +1270,7 @@ A supplied function may refine the formal signature rather than match it.
 Parameter and result counts, modes, and exact types must agree in order; parameter and result binder spellings are not signature identity.
 The actual's declared row must be a subset of the formal's after parameter-ordinal and path normalization; a row states exactly what the body does [EFF-2], so a read-only function cannot declare a write.
 The actual's own declaration must independently satisfy EFF-1 and exhibit exactly its own row under EFF-2.
-The actual's `requires` must be weaker than the formal's and its `ensures` stronger, and each actual's requirements and ensures have the ordinary FN-8/FN-9 formation and verification boundary, including PRE-1 declarations.
+The actual's `requires` must be weaker than the formal's and its `ensures` stronger, and each actual's requirements and ensures have the ordinary FN-8/FN-9 formation and verification boundary, including PRE-1 and PRE-2 declarations.
 Weaker and stronger are decided by a fixed finite check inside the existing affine entailment fragment [ENT-1, MSR-4] and by no solver: for each actual `requires` goal, the formal's `requires` set must discharge it under [MSR-4]'s disposition with the formal's own set as the only premises; for each formal `ensures` relation, the actual's `ensures` set must discharge it with the actual's own set as the only premises.
 The check is deterministic and terminating because both sets are finite and each query exhausts [ENT-6]'s fixed families.
 
@@ -1292,7 +1292,7 @@ This criterion deliberately rejects some finite permutation cycles. Acyclic expa
 [FN-7] Program start selects an ordinary function and supplies ordinary arguments [PROG-3]. Its name, signature, result types, written contracts, and source callers obey FN-1 through FN-10 without an entry-specific restriction.
 A module program names its entries in its graph [MOD-9]; a source bundle's build selects its function `main`, and the language reserves no entry name. Selection, argument construction and binding, and interpretation of a normal result belong to the build invocation and do not select source acceptance.
 
-[FN-8] Every source `fn_decl`, generic or nongeneric, and every `fn_sig` may carry one optional `contract_block`. A function formal's block has the same formation rules and constrains bindings under FN-4. Every supplied definition must satisfy the ordinary declared contract; a Whitefoot body is checked under FN-9 and a PRE-1 declaration is supplied under SCOPE-3.
+[FN-8] Every source `fn_decl`, generic or nongeneric, and every `fn_sig` may carry one optional `contract_block`. A function formal's block has the same formation rules and constrains bindings under FN-4. Every supplied definition must satisfy the ordinary declared contract; a Whitefoot body is checked under FN-9 and a PRE-1 or PRE-2 declaration is supplied under SCOPE-3.
 A present block must contain at least one `requires_clause` or `ensures_clause`; an empty or define-only block is an FN-8 rejection at `contract_block`.
 Grammar fixes all definitions before all requirements and all requirements before all postconditions.
 
@@ -1340,7 +1340,7 @@ Lowering must preserve its ordinary ABI and symbol but emit exactly one empty en
 A source call must still prove every contradictory requirement, which no reachable non-contradictory caller state can do.
 
 [FN-9] Each `ensures_clause` in a FN-8 `contract_block` declares one independent normal-return relation.
-A source declaration is not a trusted assertion: its body proves the relation by the selected-return judgment below. A PRE-1 signature supplies its declared relation under SCOPE-3 and has no source returns to check. Formation and caller instantiation are the same ordinary judgments in both cases.
+A source declaration is not a trusted assertion: its body proves the relation by the selected-return judgment below. A PRE-1 or PRE-2 signature supplies its declared relation under SCOPE-3 and has no source returns to check. Formation and caller instantiation are the same ordinary judgments in both cases.
 No contract definition or clause contributes an effect, executable epilogue, runtime operation, storage slot, or runtime report.
 
 Every declared result ordinal is a datum of every clause, written as that ordinal's `result_binding` spelling [CALL-4].
@@ -1354,7 +1354,7 @@ Unit, float, aggregate, nested-payload, whole-Result, non-Ok, and every other sh
 Omitting Err routes means Err exits are unselected, not unreachable.
 
 After recursively alpha-expanding every shared `contract_define`, the clause expression must have exact type `own Bool` and its root must be exactly one `compare_op` — `==`, `!=`, `<`, `<=`, `>`, or `>=` [GRAM-5].
-Each operand is one **relation term**: one datum displaced by a written constant, which is the shape [ENT-4]'s closure represents and the shape every declared relation of the kernel declaration domain writes [PRE-1].
+Each operand is one **relation term**: one datum displaced by a written constant, which is the shape [ENT-4]'s closure represents and the shape every declared relation of the kernel declaration domain writes [PRE-1, PRE-2].
 Its datum must be one of the clause's symbolic result datums, a parameter datum with field and `deref` projections, a named const, a typed integer literal, a measure member of an admitted formal place P [OP-15, MSR-5], or a measure member of a declared result ordinal of measured type [CALL-4]; at least one operand contains a result datum (a measure member over one included) or the exit-state measure of a reference parameter whose row declares a write of that path, and the two may name two different result ordinals. A clause naming only that exit state is admitted regardless of the result type, including unit.
 Its displacement is the mathematical value of the rest of that `affine_expr` side, which must reduce to one integer constant: the side is admitted exactly when it carries one such datum with coefficient one, or none and a constant, and a side carrying two datums or a datum with any other coefficient is outside the difference-bound fragment [ENT-4] and is an FN-9 rejection at that clause naming the fragment.
 A measure member rooted at a reference parameter whose row declares a write of that path denotes the selected return's exit state; `entry(parameter)` denotes that parameter at function entry [MSR-3].
@@ -1382,7 +1382,7 @@ The relation is queried once in the current ProofContext at that return.
 Every query must discharge; the first clause/return failure rejects with no runtime fallback.
 
 Postcondition verification has no summary fixed point.
-Form the concrete ordinary-call graph, its SCCs, and the callee-before-caller condensation. PRE-1 supplied declarations and pending interface declarations [MOD-8] are leaves whose declared relations are already available; source definitions undergo the following body verification.
+Form the concrete ordinary-call graph, its SCCs, and the callee-before-caller condensation. PRE-1 and PRE-2 supplied declarations and pending interface declarations [MOD-8] are leaves whose declared relations are already available; source definitions undergo the following body verification.
 The graph treats a call from one module to an instance of another module's generic callable as reaching every function-kind actual that instance was supplied, whether or not its body calls them [MOD-8]; components formed this way only grow, and an edit to that body cannot change which summaries the calling module's proofs may use. Within one module the graph is the calls alone.
 While verifying a component, all same-component S12 summaries are unavailable; previously completed callee components remain available.
 Only after every relation of every inhabited instance in the component succeeds are all its relation summaries published atomically; any failure publishes none. Publication is per module: the members one module's check verifies publish their summaries to that module's other proofs once all of them verify, another module's instance never delays it, and composition still requires every member to verify.
@@ -1493,7 +1493,7 @@ Framing an action out of an enclosing row removes no checked action or ordinary 
 
 A SET-1 commit contributes a write. SET-1's reinitialization of a complete binding already dead at statement entry keeps its no-previous-owner exception. Target and right-hand-side evaluation contribute ordinarily.
 A declared entry is exhibited when the body accesses storage at or below its path. Rows are checked both ways against this complete exhibited set — every declared entry is exhibited in that sense, and every exhibited access lies under some declared entry — so undeclared-but-exhibited and declared-but-unexhibited are both EFF-2 errors. A declaration with no exhibited contribution writes `pure`, whether or not it carries erased contracts.
-A PRE-1 function signature is the ordinary declared boundary; its linked definition must satisfy the same boundary [SCOPE-3, PRE-1]. No source body is fabricated for it and no alternate effect rule applies to its calls.
+A PRE-1 or PRE-2 function signature is the ordinary declared boundary; its supplied definition must satisfy the same boundary [SCOPE-3, PRE-1, PRE-2]. No source body is fabricated for it and no alternate effect rule applies to its calls.
 
 [EFF-3] A call whose row is `pure` and which allocates nothing licenses deduplication and reordering with equal arguments.
 The ground is that the heap a call takes from is finite and a duplicated take is a different program [STOR-8].
@@ -1546,8 +1546,8 @@ If an implementation does select an overlapping lowering, every premise of that 
 
 ## 11. Programs and modules
 
-[PROG-1] A program is a module program, whose graph [MOD-1] registers its modules, or a source bundle [PROG-2], which forms one module. Every language name is declared by one of the program's modules or by the prelude [PRE-1].
-There is no source include, external package, glob import, source-path search, dynamic loading or reflection: a module program reads exactly the records its graph registers [MOD-2].
+[PROG-1] A program is a module program, whose graph [MOD-1] registers its modules, or a source bundle [PROG-2], which forms one module. Every language name is declared by one of the program's modules, by a standard library module it selects [MOD-10] or by the prelude [PRE-1].
+The standard library is the one package a program reads besides its own: there is no source include, other external package, glob import, source-path search, dynamic loading or reflection, and a module program reads exactly the records its graph registers [MOD-2] and those of the standard library modules it selects [MOD-10].
 Build and link supply definitions for ordinary declarations and select the invocation [PROG-3]; implementation language and linkage are not source semantic inputs.
 
 [PROG-2] A source bundle is one ordered nonempty sequence of logical source records.
@@ -1557,11 +1557,11 @@ Path spelling is preserved exactly and compared case-sensitively.
 An empty record sequence, an invalid logical path, or two records with the same logical path is an input-envelope failure, not a source-language rejection.
 Record order is exactly the order in the bound invocation; no path sort, host enumeration order, or other reordering is applied.
 Within that bound unit, a source record is identified by its zero-based ordinal, exact logical path, and exact source bytes.
-A source bundle forms one module, the root module `pkg`, whose every record is an implementation record [MOD-2]: it has no interface record, so no declaration of it is public [MOD-6], and every other module rule applies to it unchanged.
+A source bundle forms one module, the root module `pkg`, whose every record is an implementation record [MOD-2]: it has no interface record, so no declaration of it is public [MOD-6], it may name every standard library module as a module whose graph row lists them all [MOD-5, MOD-10], and every other module rule applies to it unchanged.
 Its first record may begin with `program no_heap;` [GRAM-2, STOR-8].
 
 [PROG-3] Execution starts by an ordinary call to the build-selected function with arguments matching its ordinary signature: a source bundle's function `main`, or a module program's entry [MOD-9]. The implementation must establish the arguments' declared types, ownership, and requirements before making that call, exactly as any caller must [FN-1, FN-8].
-A program may use the ordinary PRE-1 `Inputs` struct or any other admitted signature; the heap is ambient and has no source spelling [STOR-8].
+A program may take the standard library's `Inputs` struct [PRE-2] or use any other admitted signature; the heap is ambient and has no source spelling [STOR-8].
 A source bundle declares that it uses no heap by writing `program no_heap;` as the first `item` of its first source record [GRAM-2, PROG-2]; a module program states that requirement on an entry [MOD-9]. What either withdraws is [STOR-8]'s.
 The ordinary call ABI, result transfer, and scope-exit rules apply to both Whitefoot and linked definitions. Implementation engines may wait or schedule internally only while preserving this same boundary. The build interprets returned values and performs any invocation teardown outside the source call; neither operation adds a source effect or changes acceptance.
 Resource unavailability before that call and trusted-computing-base termination remain outside the source outcome guarantee [SCOPE-3].
@@ -1569,8 +1569,8 @@ Resource unavailability before that call and trusted-computing-base termination 
 [MOD-1] A module program is selected by one graph record, `modules.wfg`, whose directory is the package root; no other location, working directory or search selects it.
 The graph record derives `graph_file` [GRAM-2] and passes the lexical, grammar and canonical [FORM-2] stages as every source record does [DIAG-1].
 Each `module_row` registers one module: `pkg` alone registers the root module, and `pkg::a::b` the directory `a/b` below the package root; registering a directory registers none of its ancestors or descendants.
-The row's bracketed list is the module's exact set of direct dependencies, and every dependency is an earlier row, which is what makes the graph acyclic.
-A row that registers an already registered module, a dependency naming the row's own module, a dependency listed twice in one row, and a dependency that no earlier row registers are each a hard error citing MOD-1 at that `module_path`.
+The row's bracketed list is the module's exact set of direct dependencies: every `pkg` dependency is an earlier row, which is what makes the graph acyclic, and every `std` dependency a standard library module [MOD-10].
+A row that registers an already registered module, a dependency naming the row's own module, a dependency listed twice in one row, and a `pkg` dependency that no earlier row registers are each a hard error citing MOD-1 at that `module_path`.
 Each `entry_decl` takes a fresh entry name and names one function by a `module_path` whose last component is the function's name and whose other components name its module; a repeated entry name, or an entry whose module is not registered, is a hard error citing MOD-1.
 Written row and dependency order is preserved and never inferred; the meaning of a graph does not depend on it.
 
@@ -1584,14 +1584,14 @@ The inventory declares each spelling once in each domain [TYPE-6], and an interf
 A lowercase top-level declaration whose spelling extends the declaring module's path to the path of a registered module is a hard error citing MOD-3 at the declaration: the two would occupy one qualified name.
 Visibility grants no value, proof or layout: constant dependencies, group expansion, finite instantiation and layout are judged by their own rules [CONST-2, FN-3, FN-6, STOR-6].
 
-[MOD-4] An `alias_decl` is written only in its record's initial alias header, before any other `item`; an alias item after another item is a hard error citing MOD-4 at the alias.
-An alias binds its IDENT or TYPEID, in its own record alone, to the identity its complete `pkg` path names in the alias's module: a lowercase alias binds a registered module, or a function or named const of one; an uppercase alias binds a struct, enum, interface or binding of one, or a variant of a nongeneric enum of one, written as that enum's path followed by the variant TYPEID.
+[MOD-4] A record's items begin with its `heap_decl` when it has one [GRAM-2], then its alias header, which holds every `alias_decl` of the record; an `alias_decl` that follows an item that is neither an `alias_decl` nor the `heap_decl` is a hard error citing MOD-4 at the alias.
+An alias binds its IDENT or TYPEID, in its own record alone, to the identity its complete `pkg` or `std` path names in the alias's module: a lowercase alias binds a registered module, or a function or named const of one; an uppercase alias binds a struct, enum, interface or binding of one, or a variant of a nongeneric enum of one, written as that enum's path followed by the variant TYPEID.
 A path whose registered module the alias's module may not name is a hard error citing [MOD-5] at the alias. Otherwise a path naming nothing an alias of that case binds where the alias is written, or a variant of a generic enum, is a hard error citing MOD-4 at the alias: of another module's declarations an alias binds only public ones, and an alias of an interface record sees what that record sees [MOD-3].
 An alias takes its target's lookup classes and collision domains, and a module alias the lexical-IDENT domain, and it collides as a declaration of its record's scope does [TYPE-6]: with another alias, with a declaration of its module's inventory, with a PRE-1 declaration, and with a local declaration that would shadow it.
 Every use of an alias resolves to its target's own identity. An alias is never public, never another alias's target, and grants no graph edge; an unused alias receives the same checks.
 
-[MOD-5] A qualified `type`, `callee`, construction or destructuring target begins with a module prefix: `pkg`, or a module alias of the record, followed by lowercase path components [GRAM-3, GRAM-5].
-The prefix names the registered module with the resulting path; a prefix naming no registered module, or rooted at an IDENT that is not a module alias of the record, is a hard error citing MOD-5 at the prefix.
+[MOD-5] A qualified `type`, `callee`, construction or destructuring target begins with a module prefix: `pkg`, `std`, or a module alias of the record, followed by lowercase path components [GRAM-3, GRAM-5].
+The prefix names the registered module with the resulting path, a `std` prefix the standard library module with it [MOD-10]; a prefix naming no registered module, or rooted at an IDENT that is not a module alias of the record, is a hard error citing MOD-5 at the prefix.
 A record may name its own module and the modules its module's graph row lists; naming any other module, by a prefix or an alias, is a hard error citing MOD-5 whatever transitive or ancestral relation connects them.
 The final name resolves in the named module's inventory in the grammar-selected domain [TYPE-6]; a name that inventory does not declare is a hard error citing MOD-5, and so is a declaration of another module that is not public [MOD-6].
 One accessibility rule serves executable code and annotations: every name and field selection in a body, a contract clause or `define`, an invariant, a `use` premise, an effect row and a function-kind formal must be accessible where it is written.
@@ -1609,11 +1609,18 @@ A struct, enum, interface, binding or const that an interface record declares ha
 
 [MOD-8] A module's source verdict covers every judgment on its records and depends only on them, the graph, the prelude and the interfaces of the modules it may name; it never depends on another module's implementation records.
 An interface function declaration without a definition is pending: callers use its written boundary as they use every callee's [FN-8, FN-9], and it blocks only composition, lowering and publication.
-A program composes when every selected module's verdict holds, every declared function has its definition, every required concrete instance checks [FN-2, FN-6] and every target requirement of its entry holds [MOD-9]. Composition judges the selected modules' verdicts in row order before its own conditions and reports the first rejection. A rejection raised while checking a required concrete instance is reported at its template's source, in the module that declares the template, and names a call that requested the instance.
+A program composes when every selected module's verdict holds, every declared function has its definition, which is a body in its module's implementation records or the definition the build supplies for a host function [PRE-2], every required concrete instance checks [FN-2, FN-6] and every target requirement of its entry holds [MOD-9]. Composition judges the selected modules' verdicts in row order before its own conditions and reports the first rejection. A rejection raised while checking a required concrete instance is reported at its template's source, in the module that declares the template, and names a call that requested the instance.
 
 [MOD-9] A named entry selects one public, ordinary, nongeneric function by its full path, and a build may select any ordinary nongeneric function of a registered module as an unnamed entry; the build calls the selected function under [PROG-3], and an entry naming no such function is a hard error citing MOD-9, at a named entry's `entry_decl`.
 An entry's `no_heap` states the no-heap requirement over that entry's execution closure [STOR-8]; entries of one graph share its modules and proofs and impose no requirement on one another.
 A module program's record never writes `program no_heap`: a `heap_decl` in one is a hard error citing MOD-9 at the `heap_decl`.
+
+[MOD-10] The standard library is one package the toolchain supplies: a graph record and the records of the modules it registers, judged by MOD-1 to MOD-9 as every package is, in whose records `pkg` names the standard library itself.
+Every other package names it `std`: `std::a::b` is the module the standard library's graph registers as `pkg::a::b`, and a standard library record's logical path is its path below the standard library's root after the component `std`.
+A `std` prefix in a standard library record, a `module_row` or `entry_decl` path that begins with `std`, and a `std` dependency that names no standard library module are each a hard error citing MOD-10 at that path.
+A module program selects the standard library modules its rows list, and a source bundle those its records name by a `std` path; each selected module selects its dependencies in the standard library's graph. The bound unit orders the program's modules first [MOD-2], then the selected standard library modules in the standard library's row order, so a program record's ordinal never depends on which standard library modules it selects.
+A standard library module's verdict depends only on the standard library's records and graph and the prelude [MOD-8], never on the program that selects it, and a check or composition reads a standard library module's records only when it selects that module.
+The host modules are the standard library modules PRE-2 fixes; every other standard library module is written in Whitefoot and checked as every module is.
 
 ## 12. Diagnostics and checked compilation (toolchain floor)
 
@@ -1788,7 +1795,7 @@ That binder does not also create a TYPE-6 duplicate or shadow candidate.
 A declaration collision payload is `(spelling, ordered_nonempty_conflicts)`; it cites INV-1 when the later declaration is an invariant name and TYPE-6 for every other declaration domain.
 Conflict domains use the fixed order lexical-IDENT, nominal-type, constructor, numeric-bound, LABEL, invariant.
 Each conflict contains its domain, declaration class, and `conflicting_origin`; conflicts within one domain use PRE-1 declaration ordinal first, then source declaration-event key.
-A source origin is `(NodePath, SourceCoordinate, role_ordinal, subtoken_ordinal)`; a PRE-1 origin is `(PRE-1, declaration_ordinal)`, with the zero-based preorder fixed by PRE-1. Prelude declarations are admitted to every compilation unit [PROG-1].
+A source origin is `(NodePath, SourceCoordinate, role_ordinal, subtoken_ordinal)`; a PRE-1 origin is `(PRE-1, declaration_ordinal)`, with the zero-based preorder fixed by PRE-1. Prelude declarations are admitted to every module [PRE-1].
 A struct event may report both nominal-type and constructor conflicts in that order.
 Rank 3 reports only PRE-1 conflicts when the same event also conflicts with source.
 A PRE-1 collision points to the source declaration.
@@ -2096,11 +2103,11 @@ Exhaustion of the execution resources an implementation spends on overlapping is
 Permission over the iterations of a `for_stmt` written inside B is exactly this rule applied to that loop; no rule of this specification joins two index ranges into one iteration space.
 This rule uses [CAP-1]'s ordinary ownership boundary directly; it introduces no additional sharing classification for the accumulator or any other place.
 
-## 14. Prelude (normative, counted)
+## 14. Prelude and host modules (normative, counted)
 
-[PRE-1] The prelude contributes ordinary nominal, constructor, numeric-bound and function declarations to every compilation unit. Their source visibility, whole-unit collisions, typing, ownership and calls are the ordinary rules; an entry's prelude origin supplies only its deterministic diagnostic ordinal [TYPE-6, DIAG-1].
+[PRE-1] The prelude contributes ordinary nominal, constructor, numeric-bound and function declarations to every module. Their source visibility, collisions, typing, ownership and calls are the ordinary rules; an entry's prelude origin supplies only its deterministic diagnostic ordinal [TYPE-6, DIAG-1].
 
-The prelude's opaque structs [TYPE-2] are the three storage shapes and the cell `Box` [TYPE-9], and the host handles. A host handle has no fields and a host-supplied representation [OP-9], its release is empty [STOR-3], and only a host function row below returns one; the shapes and `Box` are built by the construction rows [OP-13]. An opaque struct is not const-eligible [CONST-2]; its capability modifier and the ordinary ownership closure are exactly [OWN-1, PROV-6]. Their declarations are:
+The prelude's opaque structs [TYPE-2] are the three storage shapes and the cell `Box` [TYPE-9], built by the construction rows [OP-13]. An opaque struct is not const-eligible [CONST-2]; its capability modifier and the ordinary ownership closure are exactly [OWN-1, PROV-6]. Their declarations are:
 
 ```
 opaque struct Array<T, const n: u64> {
@@ -2121,51 +2128,9 @@ opaque nocopy struct Ring<T, const n: u64> {
 opaque nocopy struct Box<T> {
   inner: T;
 }
-
-opaque nocopy struct Args {
-}
-
-opaque nocopy struct HostString {
-}
-
-opaque nocopy struct RelativePath {
-}
-
-opaque nodrop struct DirectoryRead {
-}
-
-opaque nodrop struct ReadFile {
-}
-
-opaque nocopy struct OutputStream {
-}
-
-opaque nocopy struct ExitStatus {
-}
-
-opaque nodrop struct DirectorySource {
-}
-
-opaque nocopy struct HandleFactory {
-}
-
-opaque nocopy struct InputStream {
-}
-
-opaque nocopy struct SocketAddress {
-}
-
-opaque nodrop struct TcpListener {
-}
-
-opaque nodrop struct TcpReceive {
-}
-
-opaque nodrop struct TcpSend {
-}
 ```
 
-The complete ordinary struct and enum declarations are:
+The complete enum declarations are:
 
 ```
 enum Bool {
@@ -2195,169 +2160,13 @@ enum DivError {
 enum NarrowError {
   NarrowError();
 }
-
-struct TcpConnection {
-  receive: TcpReceive;
-  send: TcpSend;
-}
-
-struct AcceptedConnection {
-  connection: TcpConnection;
-  peer: SocketAddress;
-}
-
-struct Inputs {
-  args: Args;
-  cwd: DirectoryRead;
-  stdout: OutputStream;
-  stderr: OutputStream;
-  handles: HandleFactory;
-  stdin: InputStream;
-}
-
-enum ArgError {
-  InvalidIndex();
-}
-
-enum Utf8Error {
-  Utf8Invalid();
-}
-
-enum CopyError {
-  CopyTooSmall(required: u64);
-}
-
-enum Utf8CopyError {
-  Utf8CopyTooSmall(required: u64);
-  Utf8CopyInvalid();
-}
-
-enum PathError {
-  PathInvalid();
-}
-
-enum ReadStop {
-  ReadEnd();
-  ReadFailed(error: IoError);
-}
-
-enum IoError {
-  NotFound(code: u32, origin: u8);
-  PermissionDenied(code: u32, origin: u8);
-  AlreadyExists(code: u32, origin: u8);
-  NotDirectory(code: u32, origin: u8);
-  IsDirectory(code: u32, origin: u8);
-  DirectoryNotEmpty(code: u32, origin: u8);
-  ReadOnly(code: u32, origin: u8);
-  ResourceBusy(code: u32, origin: u8);
-  InvalidInput(code: u32, origin: u8);
-  InvalidPath(code: u32, origin: u8);
-  Unsupported(code: u32, origin: u8);
-  TimedOut(code: u32, origin: u8);
-  BrokenPipe(code: u32, origin: u8);
-  WriteZero(code: u32, origin: u8);
-  UnexpectedEnd(code: u32, origin: u8);
-  ConnectionRefused(code: u32, origin: u8);
-  ConnectionReset(code: u32, origin: u8);
-  ConnectionAborted(code: u32, origin: u8);
-  NotConnected(code: u32, origin: u8);
-  AddressInUse(code: u32, origin: u8);
-  AddressUnavailable(code: u32, origin: u8);
-  ResourceExhausted(code: u32, origin: u8);
-  FileTooLarge(code: u32, origin: u8);
-  NoSpace(code: u32, origin: u8);
-  QuotaExceeded(code: u32, origin: u8);
-  CrossDevice(code: u32, origin: u8);
-  DeviceFailure(code: u32, origin: u8);
-  Other(code: u32, origin: u8);
-}
-enum ListStop {
-  ListEnd();
-  ListFailed(error: IoError);
-}
 ```
 
-`TcpConnection`, `AcceptedConnection` and `Inputs` have ordinary public constructors, fields, partial-move and destructuring rules. Their linearity follows their fields. No relation between two fields is implied by constructing a struct.
 The two built-in numeric bounds `Int` and `Float` admit exactly OP-1's integer and floating-point domains and imply `copy` under PROV-6. They are not source declarations, interface groups, implicit behaviors or logical-law bundles; a source actual cannot bind or extend either bound.
 
 The complete function declarations are the following records, each written as the head of a GRAM-2 `fn_decl` — `"fn" IDENT generics? "(" param_list? ")"` and the rest of `fn_sig` from `->` on — so a record carries `fn_decl`'s `generics?` where a function-kind parameter's `fn_sig` [FN-3] carries none. A record's final semicolon is table punctuation, not a new top-level source production. Each signature uses ordinary parameter paths under EFF-1 and the same requirement and postcondition templates as any FN-8/FN-9 contract. The type parameters `W` and `X` of the window operations are the compiler-owned window type parameter OP-10 fixes, and the `W` of `free_empty` is the wider shape parameter OP-14 fixes. No proposition is available merely from a function's name, implementation, result constructor, or prelude origin.
 
 ```
-fn args_count(args: &Args) -> result: u64 reads(args);
-fn arg_get(args: &Args, position: u64) -> result: Result<HostString, ArgError> reads(args);
-fn host_bytes_len(value: &HostString) -> result: u64 reads(value);
-fn host_copy_bytes(value: &HostString, destination: &[u8], start: u64, end: u64) -> result: Result<u64, CopyError> reads(value), writes(destination) contract {
-  requires start <= end;
-  requires end <= deref(destination).len;
-  ensures when Ok(value: next): start <= next;
-  ensures when Ok(value: next): next <= end;
-};
-fn host_utf8_len(value: &HostString) -> result: Result<u64, Utf8Error> reads(value);
-fn host_copy_utf8(value: &HostString, destination: &[u8], start: u64, end: u64) -> result: Result<u64, Utf8CopyError> reads(value), writes(destination) contract {
-  requires start <= end;
-  requires end <= deref(destination).len;
-  ensures when Ok(value: next): start <= next;
-  ensures when Ok(value: next): next <= end;
-};
-fn relative_path(value: HostString) -> result: Result<RelativePath, PathError> pure;
-fn open_read(factory: &HandleFactory, root: &DirectoryRead, path: &RelativePath) -> result: Result<ReadFile, IoError> reads(root), reads(path), writes(factory);
-fn read_at(factory: &HandleFactory, file: &ReadFile, destination: &[u8], file_offset: u64, start: u64, end: u64) -> result: Result<u64, ReadStop> writes(factory), writes(file), writes(destination) contract {
-  requires start <= end;
-  requires end <= deref(destination).len;
-  ensures when Ok(value: next): start <= next;
-  ensures when Ok(value: next): next <= end;
-};
-fn write_once(factory: &HandleFactory, output: &OutputStream, source: &[u8], start: u64, end: u64) -> result: Result<u64, IoError> reads(source), writes(factory), writes(output) contract {
-  requires start <= end;
-  requires end <= deref(source).len;
-  ensures when Ok(value: next): start <= next;
-  ensures when Ok(value: next): next <= end;
-};
-fn exit_status(code: u8) -> result: ExitStatus pure;
-fn open_directory(factory: &HandleFactory, root: &DirectoryRead, name: &[u8], start: u64, end: u64) -> result: Result<DirectoryRead, IoError> reads(root), reads(name), writes(factory) contract {
-  requires start <= end;
-  requires end <= deref(name).len;
-};
-fn open_directory_source(factory: &HandleFactory, directory: &DirectoryRead) -> result: Result<DirectorySource, IoError> reads(directory), writes(factory);
-fn directory_next(source: &DirectorySource, destination: &[u8], start: u64, end: u64) -> (result: Result<unit, ListStop>, next: u64, entries: u64) writes(source), writes(destination) contract {
-  requires start <= end;
-  requires end <= deref(destination).len;
-  ensures start <= next;
-  ensures next <= end;
-};
-fn open_file(factory: &HandleFactory, root: &DirectoryRead, name: &[u8], start: u64, end: u64) -> result: Result<ReadFile, IoError> reads(root), reads(name), writes(factory) contract {
-  requires start <= end;
-  requires end <= deref(name).len;
-};
-fn close_read(factory: &HandleFactory, file: ReadFile) -> result: Result<unit, IoError> writes(factory);
-fn close_directory(factory: &HandleFactory, directory: DirectoryRead) -> result: Result<unit, IoError> writes(factory);
-fn close_directory_source(factory: &HandleFactory, source: DirectorySource) -> result: Result<unit, IoError> writes(factory);
-fn read_next(factory: &HandleFactory, input: &InputStream, destination: &[u8], start: u64, end: u64) -> result: Result<u64, ReadStop> writes(factory), writes(input), writes(destination) contract {
-  requires start <= end;
-  requires end <= deref(destination).len;
-  ensures when Ok(value: next): start <= next;
-  ensures when Ok(value: next): next <= end;
-};
-fn socket_address_v4(a: u8, b: u8, c: u8, d: u8, port: u16) -> result: SocketAddress pure;
-fn socket_address_v6(a: u16, b: u16, c: u16, d: u16, e: u16, f: u16, g: u16, h: u16, port: u16) -> result: SocketAddress pure;
-fn tcp_listen(factory: &HandleFactory, address: &SocketAddress) -> result: Result<TcpListener, IoError> reads(address), writes(factory);
-fn tcp_accept(factory: &HandleFactory, listener: &TcpListener) -> result: Result<AcceptedConnection, IoError> writes(factory), writes(listener);
-fn tcp_connect(factory: &HandleFactory, address: &SocketAddress) -> result: Result<TcpConnection, IoError> reads(address), writes(factory);
-fn receive_next(receive: &TcpReceive, destination: &[u8], start: u64, end: u64) -> result: Result<u64, ReadStop> writes(receive), writes(destination) contract {
-  requires start <= end;
-  requires end <= deref(destination).len;
-  ensures when Ok(value: next): start <= next;
-  ensures when Ok(value: next): next <= end;
-};
-fn send_once(send: &TcpSend, source: &[u8], start: u64, end: u64) -> result: Result<u64, IoError> reads(source), writes(send) contract {
-  requires start <= end;
-  requires end <= deref(source).len;
-  ensures when Ok(value: next): start <= next;
-  ensures when Ok(value: next): next <= end;
-};
-fn close_listener(factory: &HandleFactory, listener: TcpListener) -> result: Result<unit, IoError> writes(factory);
-fn close_receive(factory: &HandleFactory, receive: TcpReceive) -> result: Result<unit, IoError> writes(factory);
-fn close_send(factory: &HandleFactory, send: TcpSend) -> result: Result<unit, IoError> writes(factory);
 fn box_new<T>(value: T) -> result: Box<T> pure;
 fn array_filled<T: copy, const n: u64>(value: T) -> result: Array<T, n> pure contract {
   ensures result.len == n;
@@ -2447,7 +2256,283 @@ fn free_empty<W>(window: W) -> result: unit pure contract {
 
 Each record is an ordinary callable boundary usable by a direct call or a function-kind binding under FN-2 through FN-5. Its definition is supplied by the build and must satisfy the declared boundary [SCOPE-3]; calls neither inspect nor classify that definition. There is one ordinary callable ABI for definitions written in Whitefoot and definitions supplied by linking. A reference passed to either lasts through that call's return and is not retained beyond it [REF-3]. A missing definition or incompatible physical representation is a build/link failure, not a source-language rejection.
 PRE-1 requirement templates are discharged by FN-8 and declared postconditions are instantiated only by CALL-6 and FN-9's ordinary selected-result rules. The supplied definition is responsible for those propositions under SCOPE-3; its declaration has no Whitefoot body for FN-9 to verify. No compiler-owned operation fact or alternative acceptance judgment exists.
-The declaration preorder is each opaque struct above in written order with its refused constructor and its fields in declaration order, then each ordinary struct or enum above in written order with its constructor or variants and their fields in declaration order, then `Int`, `Float`, then each host function above in written order, then each construction function above in written order, then each window operation above in written order, then `swap` and `free_empty`, each with its type, const and value parameters in declared order. Owner-local fields and parameters do not enter compilation-root name lookup. This preorder fixes each PRE-1 diagnostic ordinal [DIAG-1].
+The declaration preorder is each opaque struct above in written order with its refused constructor and its fields in declaration order, then each enum above in written order with its variants and their fields in declaration order, then `Int`, `Float`, then each construction function above in written order, then each window operation above in written order, then `swap` and `free_empty`, each with its type, const and value parameters in declared order. Owner-local fields and parameters do not enter compilation-root name lookup. This preorder fixes each PRE-1 diagnostic ordinal [DIAG-1].
+
+[PRE-2] The host modules are the five standard library modules [MOD-10] `std::io`, `std::text`, `std::fs`, `std::net` and `std::process`, registered by these rows of the standard library's graph:
+
+```
+pkg::io: [];
+pkg::text: [];
+pkg::fs: [pkg::io, pkg::text];
+pkg::net: [pkg::io];
+pkg::process: [pkg::io, pkg::text, pkg::fs];
+```
+
+A host module has no implementation record, and its interface record is exactly the text below. Each function it declares is an ordinary callable boundary whose definition the build supplies and must satisfy the declared boundary [SCOPE-3], exactly as a PRE-1 function record's is; calls neither inspect nor classify that definition, and its requirement templates and postconditions are discharged and instantiated as PRE-1's are.
+A host handle is an opaque struct [TYPE-2] a host module declares with no fields: it has a host-supplied representation, its release is empty [STOR-3], and only a host function returns one.
+`TcpConnection`, `AcceptedConnection` and `Inputs` have ordinary public constructors, fields, partial-move and destructuring rules. Their linearity follows their fields. No relation between two fields is implied by constructing a struct.
+
+`std::io`, the record `io/module.wfm`:
+
+```
+public opaque nocopy struct HandleFactory {
+}
+
+public opaque nocopy struct OutputStream {
+}
+
+public opaque nocopy struct InputStream {
+}
+
+public enum IoError {
+  NotFound(public code: u32, public origin: u8);
+  PermissionDenied(public code: u32, public origin: u8);
+  AlreadyExists(public code: u32, public origin: u8);
+  NotDirectory(public code: u32, public origin: u8);
+  IsDirectory(public code: u32, public origin: u8);
+  DirectoryNotEmpty(public code: u32, public origin: u8);
+  ReadOnly(public code: u32, public origin: u8);
+  ResourceBusy(public code: u32, public origin: u8);
+  InvalidInput(public code: u32, public origin: u8);
+  InvalidPath(public code: u32, public origin: u8);
+  Unsupported(public code: u32, public origin: u8);
+  TimedOut(public code: u32, public origin: u8);
+  BrokenPipe(public code: u32, public origin: u8);
+  WriteZero(public code: u32, public origin: u8);
+  UnexpectedEnd(public code: u32, public origin: u8);
+  ConnectionRefused(public code: u32, public origin: u8);
+  ConnectionReset(public code: u32, public origin: u8);
+  ConnectionAborted(public code: u32, public origin: u8);
+  NotConnected(public code: u32, public origin: u8);
+  AddressInUse(public code: u32, public origin: u8);
+  AddressUnavailable(public code: u32, public origin: u8);
+  ResourceExhausted(public code: u32, public origin: u8);
+  FileTooLarge(public code: u32, public origin: u8);
+  NoSpace(public code: u32, public origin: u8);
+  QuotaExceeded(public code: u32, public origin: u8);
+  CrossDevice(public code: u32, public origin: u8);
+  DeviceFailure(public code: u32, public origin: u8);
+  Other(public code: u32, public origin: u8);
+}
+
+public enum ReadStop {
+  ReadEnd();
+  ReadFailed(public error: IoError);
+}
+
+public fn write_once(factory: &HandleFactory, output: &OutputStream, source: &[u8], start: u64, end: u64) -> result: Result<u64, IoError> reads(source), writes(factory), writes(output) contract {
+  requires start <= end;
+  requires end <= deref(source).len;
+  ensures when Ok(value: next): start <= next;
+  ensures when Ok(value: next): next <= end;
+} doc "Writes bytes of source from start toward end to output with one host write; Ok carries the index after the last byte written.";
+
+public fn read_next(factory: &HandleFactory, input: &InputStream, destination: &[u8], start: u64, end: u64) -> result: Result<u64, ReadStop> writes(factory), writes(input), writes(destination) contract {
+  requires start <= end;
+  requires end <= deref(destination).len;
+  ensures when Ok(value: next): start <= next;
+  ensures when Ok(value: next): next <= end;
+} doc "Reads bytes of input into destination from start toward end with one host read; Ok carries the index after the last byte read, and ReadEnd reports the end of the input.";
+```
+
+`std::text`, the record `text/module.wfm`:
+
+```
+public opaque nocopy struct Args {
+}
+
+public opaque nocopy struct HostString {
+}
+
+public enum ArgError {
+  InvalidIndex();
+}
+
+public enum CopyError {
+  CopyTooSmall(public required: u64);
+}
+
+public enum Utf8Error {
+  Utf8Invalid();
+}
+
+public enum Utf8CopyError {
+  Utf8CopyTooSmall(public required: u64);
+  Utf8CopyInvalid();
+}
+
+public fn args_count(args: &Args) -> result: u64 reads(args) doc "Returns the number of invocation arguments.";
+
+public fn arg_get(args: &Args, position: u64) -> result: Result<HostString, ArgError> reads(args) doc "Returns the invocation argument at position, or InvalidIndex when position is not below the argument count.";
+
+public fn host_bytes_len(value: &HostString) -> result: u64 reads(value) doc "Returns the length of value in bytes.";
+
+public fn host_copy_bytes(value: &HostString, destination: &[u8], start: u64, end: u64) -> result: Result<u64, CopyError> reads(value), writes(destination) contract {
+  requires start <= end;
+  requires end <= deref(destination).len;
+  ensures when Ok(value: next): start <= next;
+  ensures when Ok(value: next): next <= end;
+} doc "Copies every byte of value into destination from start; Ok carries the index after the last byte copied, and CopyTooSmall carries the length the window needs when it is shorter.";
+
+public fn host_utf8_len(value: &HostString) -> result: Result<u64, Utf8Error> reads(value) doc "Returns the length in bytes of the UTF-8 text value denotes, or Utf8Invalid when it denotes none.";
+
+public fn host_copy_utf8(value: &HostString, destination: &[u8], start: u64, end: u64) -> result: Result<u64, Utf8CopyError> reads(value), writes(destination) contract {
+  requires start <= end;
+  requires end <= deref(destination).len;
+  ensures when Ok(value: next): start <= next;
+  ensures when Ok(value: next): next <= end;
+} doc "Copies the UTF-8 text value denotes into destination from start; Ok carries the index after the last byte copied, Utf8CopyTooSmall carries the length the window needs when it is shorter, and Utf8CopyInvalid reports a value that denotes no UTF-8 text.";
+```
+
+`std::fs`, the record `fs/module.wfm`:
+
+```
+alias HandleFactory = pkg::io::HandleFactory;
+alias IoError = pkg::io::IoError;
+alias ReadStop = pkg::io::ReadStop;
+alias HostString = pkg::text::HostString;
+
+public opaque nocopy struct RelativePath {
+}
+
+public opaque nodrop struct DirectoryRead {
+}
+
+public opaque nodrop struct ReadFile {
+}
+
+public opaque nodrop struct DirectorySource {
+}
+
+public enum PathError {
+  PathInvalid();
+}
+
+public enum ListStop {
+  ListEnd();
+  ListFailed(public error: IoError);
+}
+
+public fn relative_path(value: HostString) -> result: Result<RelativePath, PathError> pure doc "Returns value as a path relative to a directory, or PathInvalid when it cannot name one.";
+
+public fn open_read(factory: &HandleFactory, root: &DirectoryRead, path: &RelativePath) -> result: Result<ReadFile, IoError> reads(root), reads(path), writes(factory) doc "Opens the file at path below root for reading.";
+
+public fn read_at(factory: &HandleFactory, file: &ReadFile, destination: &[u8], file_offset: u64, start: u64, end: u64) -> result: Result<u64, ReadStop> writes(factory), writes(file), writes(destination) contract {
+  requires start <= end;
+  requires end <= deref(destination).len;
+  ensures when Ok(value: next): start <= next;
+  ensures when Ok(value: next): next <= end;
+} doc "Reads bytes of file at file_offset into destination from start toward end with one host read; Ok carries the index after the last byte read, and ReadEnd reports the end of the file.";
+
+public fn open_directory(factory: &HandleFactory, root: &DirectoryRead, name: &[u8], start: u64, end: u64) -> result: Result<DirectoryRead, IoError> reads(root), reads(name), writes(factory) contract {
+  requires start <= end;
+  requires end <= deref(name).len;
+} doc "Opens the directory that the bytes of name from start to end name below root.";
+
+public fn open_directory_source(factory: &HandleFactory, directory: &DirectoryRead) -> result: Result<DirectorySource, IoError> reads(directory), writes(factory) doc "Opens the listing of the entries of directory.";
+
+public fn directory_next(source: &DirectorySource, destination: &[u8], start: u64, end: u64) -> (result: Result<unit, ListStop>, next: u64, entries: u64) writes(source), writes(destination) contract {
+  requires start <= end;
+  requires end <= deref(destination).len;
+  ensures start <= next;
+  ensures next <= end;
+} doc "Writes the names of the next entries of source into destination from start toward end; next is the index after the bytes written, entries counts the names, and ListEnd reports that no entry remains.";
+
+public fn open_file(factory: &HandleFactory, root: &DirectoryRead, name: &[u8], start: u64, end: u64) -> result: Result<ReadFile, IoError> reads(root), reads(name), writes(factory) contract {
+  requires start <= end;
+  requires end <= deref(name).len;
+} doc "Opens the file that the bytes of name from start to end name below root for reading.";
+
+public fn close_read(factory: &HandleFactory, file: ReadFile) -> result: Result<unit, IoError> writes(factory) doc "Closes file.";
+
+public fn close_directory(factory: &HandleFactory, directory: DirectoryRead) -> result: Result<unit, IoError> writes(factory) doc "Closes directory.";
+
+public fn close_directory_source(factory: &HandleFactory, source: DirectorySource) -> result: Result<unit, IoError> writes(factory) doc "Closes the directory listing source.";
+```
+
+`std::net`, the record `net/module.wfm`:
+
+```
+alias HandleFactory = pkg::io::HandleFactory;
+alias IoError = pkg::io::IoError;
+alias ReadStop = pkg::io::ReadStop;
+
+public opaque nocopy struct SocketAddress {
+}
+
+public opaque nodrop struct TcpListener {
+}
+
+public opaque nodrop struct TcpReceive {
+}
+
+public opaque nodrop struct TcpSend {
+}
+
+public struct TcpConnection {
+  public receive: TcpReceive;
+  public send: TcpSend;
+}
+
+public struct AcceptedConnection {
+  public connection: TcpConnection;
+  public peer: SocketAddress;
+}
+
+public fn socket_address_v4(a: u8, b: u8, c: u8, d: u8, port: u16) -> result: SocketAddress pure doc "Returns the IPv4 socket address a.b.c.d with port.";
+
+public fn socket_address_v6(a: u16, b: u16, c: u16, d: u16, e: u16, f: u16, g: u16, h: u16, port: u16) -> result: SocketAddress pure doc "Returns the IPv6 socket address whose eight groups are a to h, with port.";
+
+public fn tcp_listen(factory: &HandleFactory, address: &SocketAddress) -> result: Result<TcpListener, IoError> reads(address), writes(factory) doc "Opens a TCP listener bound to address.";
+
+public fn tcp_accept(factory: &HandleFactory, listener: &TcpListener) -> result: Result<AcceptedConnection, IoError> writes(factory), writes(listener) doc "Accepts the next connection on listener and returns it with the address of its peer.";
+
+public fn tcp_connect(factory: &HandleFactory, address: &SocketAddress) -> result: Result<TcpConnection, IoError> reads(address), writes(factory) doc "Opens a TCP connection to address.";
+
+public fn receive_next(receive: &TcpReceive, destination: &[u8], start: u64, end: u64) -> result: Result<u64, ReadStop> writes(receive), writes(destination) contract {
+  requires start <= end;
+  requires end <= deref(destination).len;
+  ensures when Ok(value: next): start <= next;
+  ensures when Ok(value: next): next <= end;
+} doc "Receives bytes into destination from start toward end with one host receive; Ok carries the index after the last byte received, and ReadEnd reports that the peer finished sending.";
+
+public fn send_once(send: &TcpSend, source: &[u8], start: u64, end: u64) -> result: Result<u64, IoError> reads(source), writes(send) contract {
+  requires start <= end;
+  requires end <= deref(source).len;
+  ensures when Ok(value: next): start <= next;
+  ensures when Ok(value: next): next <= end;
+} doc "Sends bytes of source from start toward end with one host send; Ok carries the index after the last byte sent.";
+
+public fn close_listener(factory: &HandleFactory, listener: TcpListener) -> result: Result<unit, IoError> writes(factory) doc "Closes listener.";
+
+public fn close_receive(factory: &HandleFactory, receive: TcpReceive) -> result: Result<unit, IoError> writes(factory) doc "Closes the receiving half of a connection.";
+
+public fn close_send(factory: &HandleFactory, send: TcpSend) -> result: Result<unit, IoError> writes(factory) doc "Closes the sending half of a connection.";
+```
+
+`std::process`, the record `process/module.wfm`:
+
+```
+alias HandleFactory = pkg::io::HandleFactory;
+alias InputStream = pkg::io::InputStream;
+alias OutputStream = pkg::io::OutputStream;
+alias Args = pkg::text::Args;
+alias DirectoryRead = pkg::fs::DirectoryRead;
+
+public opaque nocopy struct ExitStatus {
+}
+
+public struct Inputs {
+  public args: Args;
+  public cwd: DirectoryRead;
+  public stdout: OutputStream;
+  public stderr: OutputStream;
+  public handles: HandleFactory;
+  public stdin: InputStream;
+}
+
+public fn exit_status(code: u8) -> result: ExitStatus pure doc "Returns the status that reports code when the entry returns it.";
+```
 
 ## 15. Obligation discharge: deterministic facts, invariants, and local certificates (normative)
 
@@ -2625,7 +2710,7 @@ The former selects the entry denotation of the projected measure. A bare `deref(
 Non-measure parameter datums retain [FN-9]'s entry-image stability judgment; this former adds no scalar snapshot family.
 An `own` operand denotes the call datum because its caller cannot name the consumed value's post-state. The referent of a reference parameter the row writes is still the caller's resolved place after the call: its exit measures can therefore be checked at returns and instantiated there without transferring its owner.
 Entry and exit measures are distinct terms even when both project from the same formal and actual. The exact projected effects kill the caller's supported facts before the verified exit relations establish [CALL-6]; no syntactic property of an actual may retain or kill a fact in place of that effect judgment.
-A [PRE-1] record uses this same spelling, explicit dereference, and denotation, with no separate snapshot notation.
+A [PRE-1] or [PRE-2] declaration uses this same spelling, explicit dereference, and denotation, with no separate snapshot notation.
 
 A **call datum** is a compiler-owned immutable [ENT-2] term with empty support: no place occurs in it, no [ENT-5] event kills it, and no later write retargets it.
 There is one former, keyed on what a datum denotes: a datum is identified by `(that call's NodePath, the formal ordinal, that operand's ordered projections, whether it denotes the operand's value or one measure of it)`, is compiler-owned and immutable, and is established equal to that operand's pre-transfer term at the call's pre-transfer point [ENT-3.S13].
@@ -2724,7 +2809,7 @@ Window mutation uses the operations of [OP-10]; a source helper over a written r
 [ENT-3] The fact state is defined constructively over the conservative structural normal-control graph [FN-1]: each source below establishes its L0 and signed-goal facts at its stated point; facts flow forward along normal edges; kill events apply on the edges where [ENT-5] places them, with scope-exit kills applied before any join; merge points take the [ENT-5] join and loop heads the [ENT-5] loop rule; and the state queried at any point is the [ENT-4] closure of that flow.
 Dominated straight-line establishment is a consequence of this construction, not a second definition.
 Nothing else is a fact: a writer's `ensures_clause` is only an FN-9 proof obligation, never a trusted source; a written header or local invariant conclusion has no authority until INV-1 and any applicable PRF-1 certificate prove it; no struct invariant, compiler-invented loop proposition, inferred summary, or unverified user-function result exists.
-S11 is only the compiler-owned consequence of the counted operations [FN-1] actually executes, and S12 exists only from the declaration relations available under FN-9: a separately verified earlier-SCC summary or a PRE-1 supplied declaration, under the publication formula below.
+S11 is only the compiler-owned consequence of the counted operations [FN-1] actually executes, and S12 exists only from the declaration relations available under FN-9: a separately verified earlier-SCC summary or a PRE-1 or PRE-2 supplied declaration, under the publication formula below.
 Each accepted fact retains the constructor identity and direct parents that already produced it; this diagnostic information establishes and kills no additional relation or signed goal, and no [ENT-4] answer depends on a second provenance state.
 
 A comparison origin is defined first.
@@ -2811,7 +2896,7 @@ Before the binder and captures leave scope, [INV-1]'s separately proved exact-ex
 [ENT-3.S12]
 - S12 (ordinary declared normal results).
 S12 has one owning `CallResultPublication(c,q)` judgment in the ordinary semantic flow.
-That judgment succeeds only when q belongs to a declaration relation available under FN-9, either supplied by PRE-1 or atomically published by a strictly earlier call-graph component; every actual-expression obligation and instantiated FN-8 requirement of c is discharged in the caller before transfer; every referenced formal has its exact pre-transfer substitution; ordinary consumes, borrow commits, projected effects, writes, target commits, and kills have run in the fixed order below; and every support of the substituted result relation remains live.
+That judgment succeeds only when q belongs to a declaration relation available under FN-9, either supplied by PRE-1 or PRE-2 or atomically published by a strictly earlier call-graph component; every actual-expression obligation and instantiated FN-8 requirement of c is discharged in the caller before transfer; every referenced formal has its exact pre-transfer substitution; ordinary consumes, borrow commits, projected effects, writes, target commits, and kills have run in the fixed order below; and every support of the substituted result relation remains live.
 The candidate relation and all of those parent derivations remain private until every source-semantic judgment in the compilation unit succeeds, then enter the checked program in the same failure-atomic publication as their call and function.
 Failure of any premise or any later source-semantic judgment discards the candidate and the complete prospective checked program.
 This is the original construction of S12, not a second provenance pass or a check of compiler-generated data.
@@ -2827,8 +2912,8 @@ The complete candidate set stays unchanged in failure-atomic scratch until the o
 [ENT-3.S13]
 - S13 (call datums).
 At an ordinary source call whose callee has an atomically published summary, each `own` operand and each explicitly entry-qualified measure of a written reference parameter of each declared relation of the resolved callee mints one call datum [MSR-3] and establishes it equal to that operand's exact pre-transfer term, at the pre-transfer point of [ENT-5]'s call-boundary order and before that boundary's consumes, borrow commits, callee-effect kills, and target kills.
-The population of this source is every callee whose declared relation list is published data: an ordinary function with its FN-9-verified or PRE-1-supplied contract. A PRE-1 signature is declaration data and requires no source-body earlier-component verification premise; it gains no additional result-fact source.
-The same datum formation applies to source summaries and [PRE-1] records. The exit measure of a written reference parameter is never a call datum: it is the ordinary live term after the call's exact projected effects and the statement's own kills.
+The population of this source is every callee whose declared relation list is published data: an ordinary function with its FN-9-verified, PRE-1-supplied or PRE-2-supplied contract. A PRE-1 or PRE-2 signature is declaration data and requires no source-body earlier-component verification premise; it gains no additional result-fact source.
+The same datum formation applies to source summaries and [PRE-1] and [PRE-2] declarations. The exit measure of a written reference parameter is never a call datum: it is the ordinary live term after the call's exact projected effects and the statement's own kills.
 The operand's pre-transfer term is the one [FN-9]'s `A0(c)` substitution already fixes; the datum adds no term the substitution could not name and no relation the callee did not declare.
 A datum has empty support, so [ENT-5]'s pre-kill closure carries its consequences across the same statement's kills while every fact whose support those kills remove dies normally.
 An operand the substitution leaves without an [ENT-2] term mints no datum, exactly as it makes only that relation unavailable under `M(c,q)`.
@@ -3322,6 +3407,9 @@ A resolved but unavailable named source, undischarged or malformed relation sour
 [EX-1] The following complete program is byte-exact canonical form:
 
 ```
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
 enum Sign {
   Neg();
   Zero();
