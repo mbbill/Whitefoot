@@ -71,6 +71,10 @@ the work-branch and merge boundary.
   rules. A [complete source demo](investigations/modular-compilation/demo/README.md)
   follows a queue through shared libraries, a no-heap entry and a heap-using
   tool.
+- [Repair wording](investigations/repair-wording/DESIGN.md): every repair the
+  specification prescribes against the compiler's printed text, refuted and
+  unproved probes of each, and whether the words belong to the specification
+  or the compiler.
 
 Open research questions and evidence links are in [ideas](../docs/ideas.md);
 known compiler defects and implementation costs are in [todo](../docs/todo.md).

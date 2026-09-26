@@ -22,7 +22,7 @@ use super::super::postcondition::PostconditionPlace;
 use results::ResultEvidence;
 use sources::{MeasureCarry, ValueImage};
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::rc::Rc;
 
 use super::super::goal::{
@@ -123,6 +123,21 @@ impl KillEvent {
             | Self::EntryImageHolderWrite { source, .. } => source,
         }
     }
+
+    /// The binding the event's place is rooted at; a constant root has none.
+    fn root_binding(&self) -> Option<BindingId> {
+        match self {
+            Self::Write { place, .. } | Self::EntryImageHolderWrite { place, .. } => {
+                match place.root {
+                    PlaceRoot::Binding(binding) => Some(binding),
+                    PlaceRoot::Constant(_) => None,
+                }
+            }
+            Self::Consume { binding, .. } | Self::EntryImageHolderConsume { binding, .. } => {
+                Some(*binding)
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -221,6 +236,32 @@ struct ProofFlowState {
     /// Exact integer value images and active source-proved loop invariants.
     /// Executing a statement computes the runtime value represented here.
     affine: AffineFlowState,
+    /// [DIAG-1] every binding at which a kill event on some path to this edge
+    /// roots its place [ENT-5]. It branches and joins with the rest of the
+    /// state, so a write in one arm of a conditional is no write in a
+    /// sibling arm, and a loop header carries every continuing kill of its
+    /// body before the body is walked. A failed judgment retains it so that
+    /// its repair offers a `requires` only over parameters that still hold
+    /// their entry values where the goal is asked.
+    written: BTreeSet<BindingId>,
+}
+
+impl ProofFlowState {
+    /// Records on this edge the bindings these events root their places at.
+    fn record_writes(&mut self, events: &[KillEvent]) {
+        self.written
+            .extend(events.iter().filter_map(KillEvent::root_binding));
+    }
+
+    /// What a judgment recorded at this edge retains of [`Self::written`]:
+    /// all of it when the judgment failed, and nothing when it succeeded.
+    fn written_before(&self, discharged: bool) -> Vec<BindingId> {
+        if discharged {
+            Vec::new()
+        } else {
+            self.written.iter().copied().collect()
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -467,6 +508,15 @@ enum ProofDisposition {
     Proved,
     Refuted,
     Unknown,
+}
+
+/// [MSR-4] the disposition of one [INV-1] target, which no Goal identity
+/// carries: refuted when the state derives the negation of one of its bounds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TargetDisposition {
+    Proved,
+    Refuted,
+    Unproved,
 }
 
 /// Complete route selected by one [`Analyzer::prove`] call.  The signed
@@ -4587,6 +4637,7 @@ impl Analyzer<'_, '_> {
         self.apply_kills_one(&separations, &mut states.facts, events);
         self.apply_affine_kills(&separations, &mut states.affine, events);
         self.invalidate_entry_images(states, &separations, events, None);
+        states.record_writes(events);
     }
 
     /// [WIN-2, ENT-5] the indices the entry state of `events` proves live.
@@ -7073,7 +7124,7 @@ impl Analyzer<'_, '_> {
                             requirement.requires_clause.clone(),
                             goal,
                             arguments.len(),
-                            ProofContext::new(&states.facts, &states.affine),
+                            (ProofContext::new(&states.facts, &states.affine), &*states),
                         );
                         goals_ok &= disposition == CallGoalDisposition::Discharged;
                         if let Some(derivation) = derivation {
@@ -7374,7 +7425,7 @@ impl Analyzer<'_, '_> {
         requires_clause: crate::NodePath,
         goal: ConcreteGoal,
         argument_count: usize,
-        context: ProofContext<'_>,
+        (context, written): (ProofContext<'_>, &ProofFlowState),
     ) -> (CallGoalDisposition, Option<DerivationId>) {
         let (disposition, evidence, derivation) = self.call_goal_disposition(&goal, context);
         let ordinal = u32::try_from(self.call_goals.len())
@@ -7395,6 +7446,7 @@ impl Analyzer<'_, '_> {
             disposition,
             evidence,
             derivation,
+            written_before: written.written_before(disposition == CallGoalDisposition::Discharged),
         });
         (disposition, derivation)
     }
@@ -9013,6 +9065,7 @@ impl Analyzer<'_, '_> {
                 Vec::new()
             },
             range_partitions: Vec::new(),
+            written_before: states.written_before(discharged),
         });
     }
 
@@ -9563,6 +9616,7 @@ impl Analyzer<'_, '_> {
             allocation_length_upper_bound_derivation,
             affine_index_maps: Vec::new(),
             range_partitions: Vec::new(),
+            written_before: states.written_before(discharged),
         });
     }
 
@@ -9691,6 +9745,7 @@ impl Analyzer<'_, '_> {
             allocation_length_upper_bound_derivation: None,
             affine_index_maps: Vec::new(),
             range_partitions: Vec::new(),
+            written_before: state.written_before(discharged),
         });
         discharged
     }
@@ -10143,6 +10198,7 @@ impl Analyzer<'_, '_> {
             allocation_length_upper_bound_derivation: None,
             affine_index_maps: Vec::new(),
             range_partitions: Vec::new(),
+            written_before: states.written_before(discharged),
         });
     }
 
@@ -10316,6 +10372,7 @@ impl Analyzer<'_, '_> {
             allocation_length_upper_bound_derivation: None,
             affine_index_maps: Vec::new(),
             range_partitions: Vec::new(),
+            written_before: states.written_before(discharged),
         });
     }
 
@@ -11814,6 +11871,10 @@ impl Analyzer<'_, '_> {
                 contributing.iter().map(|state| &state.separations),
             ),
             affine: self.join_affine_states(&contributing),
+            written: contributing
+                .iter()
+                .flat_map(|state| state.written.iter().copied())
+                .collect(),
         }
     }
 
@@ -12011,6 +12072,7 @@ impl Analyzer<'_, '_> {
             // conservative; the normal value-initializer join installs the
             // receiver's value separately.
             affine: AffineFlowState::default(),
+            written: source.written.clone(),
         };
         // The forward substitution happens above before the ordinary edge
         // kills, so the carrier's own branch scope cannot delete the image.
@@ -12693,13 +12755,13 @@ impl Analyzer<'_, '_> {
         ))
     }
 
-    /// Whether every member of one written invariant's batch is proved in
-    /// this state [INV-1]: one inequality, or both bounds of an equality.
+    /// The disposition of one written invariant's batch in this state
+    /// [INV-1]: one inequality, or both bounds of an equality.
     fn prove_affine_relation_batch(
         &mut self,
         relation: &CheckedAffineRelation,
         state: &mut ProofFlowState,
-    ) -> bool {
+    ) -> TargetDisposition {
         let target = self
             .checked_affine_relation_inequality(
                 relation,
@@ -12715,24 +12777,64 @@ impl Analyzer<'_, '_> {
             )
             .map(|partner| partner.ok());
         let right = self.checked_affine_right_term(&relation.right);
-        let mut members = vec![(target, right)];
+        let left = self.checked_affine_right_term(&relation.left);
+        let mut members = vec![(target, right, left)];
         if let Some(partner) = partner {
-            let right = self.checked_affine_right_term(&relation.left);
-            members.push((partner, right));
+            members.push((partner, left, right));
         }
-        members.into_iter().all(|(member, right)| {
-            member.is_some_and(|inequality| {
+        self.affine_target_disposition(&members, &state.facts, &state.affine)
+    }
+
+    /// [MSR-4] the disposition of one [INV-1] target's bounds in one state:
+    /// proved when every bound is, refuted when the state derives the
+    /// negation of one bound, and unproved otherwise. Each member carries its
+    /// bound, that bound's own right-hand term, and the opposite side's term,
+    /// which is the right-hand term of the bound's negation.
+    fn affine_target_disposition(
+        &mut self,
+        members: &[(Option<AffineInequality>, Option<TermId>, Option<TermId>)],
+        facts: &FactState,
+        affine: &AffineFlowState,
+    ) -> TargetDisposition {
+        let proved = members.iter().all(|(member, right, _)| {
+            member.as_ref().is_some_and(|inequality| {
                 self.prove(
-                    ProofContext::new(&state.facts, &state.affine),
+                    ProofContext::new(facts, affine),
                     ProofGoal::Affine {
-                        inequality: &inequality,
-                        right,
+                        inequality,
+                        right: *right,
                     },
                 )
                 .disposition
                     == ProofDisposition::Proved
             })
-        })
+        });
+        if proved {
+            return TargetDisposition::Proved;
+        }
+        // A contradictory state proves every bound, so no negation below is
+        // proved from a contradiction.
+        let refuted = members.iter().any(|(member, _, opposite)| {
+            member
+                .as_ref()
+                .and_then(|inequality| inequality.negated(&mut AffineCheckState::new()).ok())
+                .is_some_and(|negation| {
+                    self.prove(
+                        ProofContext::new(facts, affine),
+                        ProofGoal::Affine {
+                            inequality: &negation,
+                            right: *opposite,
+                        },
+                    )
+                    .disposition
+                        == ProofDisposition::Proved
+                })
+        });
+        if refuted {
+            TargetDisposition::Refuted
+        } else {
+            TargetDisposition::Unproved
+        }
     }
 
     /// INV-1 base is a simultaneous batch: every target is checked against
@@ -12742,7 +12844,7 @@ impl Analyzer<'_, '_> {
         &mut self,
         invariants: &[CheckedLoopInvariant],
         state: &mut ProofFlowState,
-    ) -> Vec<bool> {
+    ) -> Vec<TargetDisposition> {
         invariants
             .iter()
             .map(|invariant| self.prove_affine_relation_batch(&invariant.relation, state))
@@ -12801,8 +12903,8 @@ impl Analyzer<'_, '_> {
         &mut self,
         loop_id: CheckedLoopId,
         invariants: &[CheckedLoopInvariant],
-        base: &[bool],
-        step: &[Option<bool>],
+        base: &[TargetDisposition],
+        step: &[Option<TargetDisposition>],
         counted_binder: Option<BindingId>,
     ) {
         for (index, invariant) in invariants.iter().enumerate() {
@@ -12815,8 +12917,10 @@ impl Analyzer<'_, '_> {
                 backedge_target: self
                     .render_checked_invariant_relation(&invariant.relation, counted_binder),
                 proof: LoopInvariantProof {
-                    base: base[index],
-                    step: step[index],
+                    base: base[index] == TargetDisposition::Proved,
+                    step: step[index].map(|step| step == TargetDisposition::Proved),
+                    base_refuted: base[index] == TargetDisposition::Refuted,
+                    step_refuted: step[index] == Some(TargetDisposition::Refuted),
                 },
             });
         }
@@ -14311,6 +14415,7 @@ impl Analyzer<'_, '_> {
                 );
                 prepared.transfer_events.push(proof_event);
             }
+            state.record_writes(&events);
             prepared.kills = events;
             prepared.live = live;
         } else {
@@ -14557,6 +14662,7 @@ impl Analyzer<'_, '_> {
                     Some(target_event),
                 );
             }
+            state.record_writes(&target_kills);
         } else {
             self.apply_kills(state, &target_kills);
         }
@@ -15052,6 +15158,18 @@ impl Analyzer<'_, '_> {
                             == ProofDisposition::Proved
                     }));
                 let redundant = !proof.uses.is_empty() && target_proved;
+                // [MSR-4] a blockless target no step discharged is refuted
+                // when the entering context derives the negation of one of
+                // its bounds.
+                let target_refuted =
+                    proof.uses.is_empty() && !target_proved && target_failure.is_none() && {
+                        let mut members = vec![(target.clone(), target_right, partner_right)];
+                        if partner_written {
+                            members.push((partner.clone(), partner_right, target_right));
+                        }
+                        self.affine_target_disposition(&members, &state.facts, &state.affine)
+                            == TargetDisposition::Refuted
+                    };
                 let certificate_sum = if proof.uses.is_empty() || source_failure.is_some() {
                     None
                 } else {
@@ -15133,6 +15251,7 @@ impl Analyzer<'_, '_> {
                     certificate_failure_use_index,
                     residual_failure,
                     redundant,
+                    target_refuted,
                 };
 
                 if let Some(target) = target
@@ -15395,7 +15514,9 @@ impl Analyzer<'_, '_> {
                     self.judge_affine_relation_subscripts(&invariant.relation, state);
                 }
                 let base = self.prove_loop_invariant_bases(invariants, state);
-                let base_batch = base.iter().all(|proved| *proved);
+                let base_batch = base
+                    .iter()
+                    .all(|disposition| *disposition == TargetDisposition::Proved);
 
                 // The generic header starts from the preheader minus every
                 // fact a continuing kill may invalidate. Invariants then add
@@ -15536,7 +15657,9 @@ impl Analyzer<'_, '_> {
                     self.judge_affine_relation_subscripts(&invariant.relation, state);
                 }
                 let base = self.prove_loop_invariant_bases(invariants, state);
-                let base_batch = base.iter().all(|proved| *proved);
+                let base_batch = base
+                    .iter()
+                    .all(|disposition| *disposition == TargetDisposition::Proved);
 
                 let mut kills = LoopKills::default();
                 let body_reaches_head = self.collect_continuing_loop_kills(
@@ -15614,7 +15737,7 @@ impl Analyzer<'_, '_> {
                 // never widens acceptance.
                 let current_binder = body_state.affine.values.get(binder).cloned();
                 if body_falls_through && current_binder.is_none() {
-                    step = vec![Some(false); invariants.len()];
+                    step = vec![Some(TargetDisposition::Unproved); invariants.len()];
                 }
                 if let (true, Some(current_binder)) = (body_falls_through, current_binder) {
                     let next_binder = current_binder
@@ -15667,30 +15790,30 @@ impl Analyzer<'_, '_> {
                             )
                             .map(|partner| partner.ok());
                         let right = self.checked_affine_right_term(&invariant.relation.right);
-                        let mut members = vec![(next_target, right)];
+                        let left = self.checked_affine_right_term(&invariant.relation.left);
+                        let mut members = vec![(next_target, right, left)];
                         if let Some(partner) = next_partner {
-                            let right = self.checked_affine_right_term(&invariant.relation.left);
-                            members.push((partner, right));
+                            members.push((partner, left, right));
                         }
-                        let proved = members.into_iter().all(|(member, right)| {
-                            member.is_some_and(|inequality| {
-                                self.prove(
-                                    ProofContext::new(&body_state.facts, &body_state.affine),
-                                    ProofGoal::Affine {
-                                        inequality: &inequality,
-                                        right,
-                                    },
-                                )
-                                .disposition
-                                    == ProofDisposition::Proved
-                            })
+                        let disposition = self.affine_target_disposition(
+                            &members,
+                            &body_state.facts,
+                            &body_state.affine,
+                        );
+                        // An unrepresentable hidden update fails the step
+                        // without refuting the target it would reach.
+                        step[index] = Some(if hidden_update {
+                            disposition
+                        } else {
+                            TargetDisposition::Unproved
                         });
-                        step[index] = Some(hidden_update && proved);
                     }
                 }
 
                 self.record_loop_invariant_outcomes(*id, invariants, &base, &step, Some(*binder));
-                let step_batch = step.iter().all(|proved| proved.unwrap_or(true));
+                let step_batch = step.iter().all(|disposition| {
+                    disposition.is_none_or(|disposition| disposition == TargetDisposition::Proved)
+                });
                 let export = lower_le_upper && base_batch && step_batch && hidden_update;
                 let frame = self.loops.pop();
                 let mut breaks = frame.map(|frame| frame.breaks).unwrap_or_default();
@@ -16233,6 +16356,7 @@ impl Analyzer<'_, '_> {
         self.kill_result_evidence(states, &kills.events);
         self.apply_loop_kills_one(&separations, &mut states.facts, kills);
         self.apply_affine_kills(&separations, &mut states.affine, &kills.events);
+        states.record_writes(&kills.events);
         let mut groups = kills.entry_image_groups.iter().collect::<Vec<_>>();
         groups.sort_by(|left, right| left.owner.components().cmp(right.owner.components()));
         for group in groups {
@@ -16606,8 +16730,9 @@ impl Analyzer<'_, '_> {
                 ..
             } => {
                 let base = match occurrence {
+                    // [DIAG-1] fixes this spelling for an FN-8 payload.
                     EvaluatedValueOccurrence::CallArgument { argument, .. } => {
-                        format!("<argument #{argument} pre-transfer value>")
+                        format!("argument #{argument} pre-transfer value")
                     }
                     EvaluatedValueOccurrence::ObligationOperand { operand, .. } => {
                         format!("<operand #{operand} evaluated value>")

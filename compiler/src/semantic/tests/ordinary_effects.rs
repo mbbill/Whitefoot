@@ -543,7 +543,7 @@ fn a_pure_formal_does_not_cover_an_actuals_explicit_close_effects() {
     assert_rule_kind(
         include_bytes!("../../../../tests/conformance/cases/fn4-neg-pure-member-binds-release.wf"),
         SemanticRule::Fn4,
-        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
+        |kind| matches!(kind, SemanticIssueKind::BehaviorArgumentMismatch { .. }),
     );
 }
 

@@ -321,7 +321,8 @@ bounds.wf:11:21: error[OP-4]: UndischargedBoundsObligation
   source:       set deref(out)[kept] = byte;
   marker:                     ^^^^^^
   residual: kept < deref(out).len
-  mechanical_fix: when the relation must hold, establish the residual with ...
+  disposition: Unproved
+  mechanical_fix: `kept < deref(out).len` is not proved here: when facts that reach the access imply it, ...
 ```
 
 `--diagnostic-format json` prints the complete record, category, stage and

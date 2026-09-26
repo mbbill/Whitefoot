@@ -697,11 +697,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         requirement: &str,
     ) -> Result<T, CheckStop> {
-        self.issue_node(
-            rule,
-            node,
-            SemanticIssueKind::type_mismatch(requirement, "a nonmatching behavior argument"),
-        )
+        // [FN-4] a binding mismatch carries its repair [DIAG-1]; FN-2's
+        // argument-kind refusals keep the plain two-sided payload.
+        let kind = if rule == SemanticRule::Fn4 {
+            SemanticIssueKind::BehaviorArgumentMismatch {
+                expected: requirement.to_owned(),
+                mechanical_fix: "supply a function whose signature, row and contract meet the formal interface, or weaken the formal interface to what the supplied function declares",
+            }
+        } else {
+            SemanticIssueKind::type_mismatch(requirement, "a nonmatching behavior argument")
+        };
+        self.issue_node(rule, node, kind)
     }
 
     pub(super) fn expand_formal_parameters(

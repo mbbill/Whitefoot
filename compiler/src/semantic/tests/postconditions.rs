@@ -1888,6 +1888,7 @@ fn main() -> status: ExitStatus pure {
         SemanticRule::Fn9,
         SemanticIssueKind::NoSelectedNormalExit {
             residual: "no selected normal exit",
+            mechanical_fix: "no `return` of this function delivers a value this clause's route selects: return such a value on some path, or delete the clause",
         },
     );
 }

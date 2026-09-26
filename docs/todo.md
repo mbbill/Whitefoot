@@ -611,6 +611,35 @@ rarely insert at the same place.
   Keep the deferred general representation study separate, and close this item
   only when the relevant costs and chosen tradeoffs have discriminating evidence.
 
+- **A target-layout failure names no allocation site or admitted bound.** A
+  program whose OP-9 proof retains a count bound the selected target cannot
+  hold, such as the language's own ceiling `u64::MAX / stride_ceiling(T)`,
+  passes checking and stops at [STOR-6] target qualification with
+  `target layout failure in TargetLayout: TargetLayout(Unrepresentable(RuntimeSizedAllocation))`,
+  which names no source site, no proved bound and no bound the target
+  admits. The numbers exist where the check fails, in the runtime-sized
+  allocation branch of the source-call validation in
+  `compiler/src/backend/target.rs`: the retained bound, the element's target
+  stride, the descriptor header and `runtime_allocation_max()`, which give the
+  largest admitted count `(max - header) / stride`. Design: `IrSourceCall`
+  carries the call's node path, copied from the checked call during lowering;
+  a `TargetLayoutFailure` variant carries the site, the proved bound and the
+  admitted bound (the enum is `Copy` and crosses many `?` returns, so an index
+  into a side table keeps it `Copy`); the driver renders the site as a source
+  location beside the two numbers, still as a target-layout stop and never as
+  a source rejection [STOR-6]; and
+  `u16_buffer_whose_proved_count_exceeds_the_target_byte_domain_is_a_target_failure`
+  in `compiler/src/driver/tests.rs`, which pins today's stop by
+  `RuntimeSizedAllocation` in its detail, changes with it. No specification
+  change. Validate with a program that proves the OP-9 ceiling and calls the
+  allocating function from its entry: the failure names the allocation's call
+  site, the proved bound and the selected target's largest admitted count,
+  while the same program bounded below that count builds. Deferred because the
+  OP-9 repair no longer offers the ceiling as the bound to write, which closes
+  the route the [repair-wording work](../research/investigations/repair-wording/DESIGN.md#implementation)
+  found into this stop; reopen when a writer report or a program meets the
+  unlocated failure.
+
 ## Parallel lowering and runtime
 
 - **Validate reuse of selected-target element layouts during emission.**
@@ -1116,62 +1145,6 @@ rarely insert at the same place.
   that capture identity stays unchanged. Deferred because the separation
   proof already needs a binding there and the rejection names the call;
   reopen when a writer report shows the `?` blocking a repair.
-- **Proposal: disposition-specific restructurings for proof rejections.** A
-  `refuted` goal is false in the facts where it stands [ENT-4], so no added
-  requirement, invariant or proof step can establish it, yet the FN-8, OP-2
-  and OP-6 texts ask for exactly that for both dispositions, and an FN-9
-  rejection carries no restructuring at all. For an agent that applies
-  the repair literally, a refuted goal should name a change to what reaches
-  the site — the call's arguments, the operands, the returned value or the
-  state that reaches it — or a deliberate guard where rejection is intended
-  behavior, while an unproved goal keeps "establish the fact". This needs a
-  specification amendment of DIAG-1's FN-8 sentence and the FN-8, FN-9, OP-2
-  and OP-6 rejection text (with any FN-9 payload field it adds), followed by
-  the compiler texts, the pinned sentences and the unit tests that assert a
-  disposition's fix; a compiler-only change would diverge from the texts the
-  specification prescribes. Validate on one refuted and one unproved probe per
-  rule, such as `255_u8 + 1_u8`, `cvt::<u32, u8>(256_u32)`, a literal actual
-  outside a callee requirement, and an ensures relation false at its return.
-  Close when the amendment and its derived updates land, or the owner keeps
-  one restructuring per rule.
-- **Printed restructurings have drifted from the specification's texts.**
-  DIAG-1 includes a mechanical fix "exactly where the owning rule requires
-  one", and several rules prescribe its words, but the checker's strings on
-  main differ: FN-8 prescribes `establish the complete callee requirement
-  with one dominating branch or one preceding proved invariant before the
-  call` and prints "when the call is required to succeed, establish the entire
-  instantiated callee requirement with a verified requirement, ..."; OP-6's
-  printed repair likewise elaborates its prescribed one; and rules that
-  prescribe none print one anyway: EFF-1's row conditions carry a
-  `mechanical_fix` on main, and EFF-2's `EffectMismatch` prints "declare
-  exactly the row the body exhibits: ..." though EFF-2 requires no
-  restructuring. (EFF-1's subsumed-entry rejection, which requires no
-  restructuring, carries none.) EFF-1's repeated-entry fix also still quotes
-  a sentence EFF-1 no longer contains: "`writes(p)` already subsumes
-  `reads(p)`, so the pair is never written for one path". Two of these
-  printed fixes, applied literally, lead to a further rejection:
-  (a) EFF-2's "add every missing category and path and remove every extra
-  one" never removes a declared entry that a missing entry covers. A body
-  that reads `stats.count` and then calls a helper declared `writes(stats)`,
-  declared `reads(stats.count)`, gets `expected_row: "writes(stats)"`,
-  `missing: ["writes(stats)"]` and `extra: []`, because the body does read
-  `stats.count`; adding the missing entry and removing nothing gives
-  `reads(stats.count), writes(stats)`, which EFF-1 refuses at
-  `reads(stats.count)`. A body that reads `stats.count` and all of `stats`,
-  declared `reads(stats.count)`, likewise gets `missing: ["reads(stats)"]`,
-  and adding it gives `reads(stats), reads(stats.count)`, which EFF-1 also
-  refuses. Declaring `expected_row` itself is admitted in both.
-  (b) EFF-1's category-order fix turns `writes(v), reads(v)` or
-  `writes(v), reads(v.x)` into `reads(v), writes(v)` or
-  `reads(v.x), writes(v)`, which then meets the subsumed-entry rejection,
-  one more compile round for a repair that should have deleted the read.
-  Audit every rejection in one pass, rule by rule, and either update the
-  specification's text or the compiler's; the criterion is that every
-  restructuring the specification prescribes equals the printed one, and a
-  printed fix exists only where a rule requires one or the specification is
-  amended to allow it, and never leads to a further rejection of the same
-  construct. Pinned sentences and unit tests that assert the texts change
-  with it.
 - **A few payload strings still carry non-source forms.** The source-spelling
   fix left three: the FN-9 `relation` field prints the normalized relation
   with unsuffixed literals, such as `"w.value - 0 <= -1"` for
@@ -1223,6 +1196,47 @@ rarely insert at the same place.
   declaration and the change reaches every payload that names a callee;
   reopen when diagnostics for modules are next revised or an agent report
   shows the ambiguity.
+
+- **FN-9 prints its relation in normalized form.** [DIAG-1] fixes the FN-9
+  payload as the instantiated normalized relation, so `ensures result <
+  10_u64` failing at `return 20_u64;` prints `relation: 20 - 10 <= -1`,
+  without type suffixes and with the comparison rewritten as an L0 bound; an
+  agent has to translate it back to the clause it wrote. Printing the clause
+  with the returned value substituted, `20_u64 < 10_u64`, beside or in place
+  of the normalized form would read as written, and needs a DIAG-1 payload
+  amendment plus the tests that pin the relation. Validate on the FN-9 probes
+  of the [repair-wording investigation](../research/investigations/repair-wording/DESIGN.md#probes)
+  and its writer trial; reopen when that work changes the FN-9 payload or a
+  writer report shows the normalized form costing a round.
+
+- **Compiler comments cite the retired DIAG-3.** DIAG-3 was the v0.39 runtime
+  claim-trap record, retired with claims in v0.40, yet four comments still
+  cite it: three for words that are now [DIAG-1]'s (byte identity only where
+  selection and encoding are fixed, and the `unproved` or `refuted`
+  disposition) in `compiler/src/driver/pinned_sentences.rs`,
+  `compiler/src/semantic/tests/postconditions.rs` and
+  `compiler/src/semantic/tests/requires.rs`, and one, the module doc of
+  `compiler/src/semantic/permission_ledger.rs`, for the retired record
+  itself. A reader following the reference finds no rule. Cite DIAG-1 in the
+  first three and drop the ledger's clause; reopen with the next edit of any
+  of these files.
+
+- **The callee-`ensures` route can name a call whose result no longer
+  reaches the goal.** `call_results` in `compiler/src/semantic/check/repairs.rs`
+  traces the values a goal reads back to call results through a closure that
+  ignores control flow and intervening writes. In
+  `ent5-neg-readonly-field-callee-writes-base`, the loop bound
+  `entries[1_u64].width` traces to the `make_entry` call that filled
+  `entries`, although the element that reaches the goal was replaced through
+  `widen`'s separate `make_entry` call, whose result a statement writes into
+  storage without binding it. No `ensures` on `make_entry` relates that width
+  to `cells.len`, so the route cannot be carried out there, while the guard
+  printed beside it works. The route states the condition it needs, so
+  [DIAG-1] holds; the repair is only less direct than it could be. Stop the
+  trace at a write that replaces the traced storage before the goal, or offer
+  the route only for a value bound from a call and not written since; validate
+  with that case and the existing callee-route pins, and reopen when a writer
+  report shows the route costing a round.
 
 ## Code structure
 
