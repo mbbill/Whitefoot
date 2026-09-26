@@ -1058,6 +1058,20 @@ impl PlaceMap {
         })
     }
 
+    /// The binding a use of a local reference variable reads besides the
+    /// path it names: the variable holds what its formation captured, the
+    /// range endpoints and index values among them, and a `let` defines it
+    /// [REF-1, PAR-1].
+    ///
+    /// A reference parameter's own binding is the place it names, so it has
+    /// no separate holder, and neither has an owned binding.
+    pub(crate) fn reference_holder(&self, binding: BindingId) -> Option<ResolvedPlace> {
+        let summary = self.summary(binding)?;
+        let holder = ResolvedPlace::binding(binding);
+        (summary.reference && summary.reference_paths.iter().any(|path| *path != holder))
+            .then_some(holder)
+    }
+
     /// Resolves a written holder and suffix through its complete origin inventory.
     ///
     /// Stored paths are already resolved. Looking their roots up again would

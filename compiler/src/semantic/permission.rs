@@ -1360,6 +1360,14 @@ pub(super) fn set_target_place(
     node: &NodePath,
     footprint: &mut Footprint,
 ) {
+    let holder = match target {
+        CheckedSetTarget::Place(target) => Some(target.binding),
+        CheckedSetTarget::RangeIndex(target) => Some(target.root.binding),
+        CheckedSetTarget::Storage(target) => target.binding(),
+    };
+    if let Some(binding) = holder {
+        push_reference_holder_read(places, binding, node, footprint);
+    }
     let resolved = match target {
         CheckedSetTarget::Place(target) => places.resolve(
             PlaceRoot::Binding(target.binding),
@@ -1472,38 +1480,80 @@ fn push_nested_blocks<'check>(
 
 /// Every binding one expression tree mentions, for the counted judgment's
 /// accumulator count.
+///
+/// A range formation's source is left out, as it always has been: neither
+/// consumer asks about a binding a range is formed over.
 pub(super) fn visit_read_bindings(
     expression: &CheckedExpression,
     note: &mut impl FnMut(BindingId),
 ) {
+    if !matches!(expression, CheckedExpression::RangeOf { .. })
+        && let Some(binding) = named_binding(expression)
+    {
+        note(binding);
+    }
+    for child in expression_children(expression) {
+        visit_read_bindings(child, note);
+    }
+}
+
+/// The binding one expression's own place is written at, leaving its child
+/// expressions to the caller.
+///
+/// The match is exhaustive so that a new expression form decides whether it
+/// names a binding.
+fn named_binding(expression: &CheckedExpression) -> Option<BindingId> {
     match expression {
         CheckedExpression::Binding { binding, .. }
         | CheckedExpression::Project { binding, .. }
         | CheckedExpression::BoxTake { binding, .. }
-        | CheckedExpression::DerefAddressed { binding, .. } => note(*binding),
+        | CheckedExpression::DerefAddressed { binding, .. } => Some(*binding),
         CheckedExpression::BorrowAddressed { root, .. }
         | CheckedExpression::ContainerMeasure { root, .. }
-        | CheckedExpression::ReadStorage { root, .. } => {
-            if let Some(binding) = root.binding() {
-                note(binding);
-            }
-        }
+        | CheckedExpression::ReadStorage { root, .. } => root.binding(),
         CheckedExpression::BufferMeasure { root, .. }
-        | CheckedExpression::BufferIndex { root, .. } => note(root.binding),
-        CheckedExpression::RangeMeasure { root, .. } => note(root.binding),
+        | CheckedExpression::BufferIndex { root, .. } => Some(root.binding),
+        CheckedExpression::RangeMeasure { root, .. } => Some(root.binding),
         CheckedExpression::RangeElementMeasure { place, .. }
         | CheckedExpression::RangeIndex { place, .. }
-        | CheckedExpression::BorrowRangeIndex { place, .. } => note(place.root.binding),
+        | CheckedExpression::BorrowRangeIndex { place, .. } => Some(place.root.binding),
+        CheckedExpression::RangeOf { source, .. } => source.binding(),
         CheckedExpression::ArrayMeasure { root, .. }
-        | CheckedExpression::ArrayIndex { root, .. } => {
-            if let CheckedArrayRoot::Binding { binding, .. } = root {
-                note(*binding);
-            }
-        }
-        _ => {}
+        | CheckedExpression::ArrayIndex { root, .. } => match root {
+            CheckedArrayRoot::Binding { binding, .. } => Some(*binding),
+            CheckedArrayRoot::Constant(_) => None,
+        },
+        CheckedExpression::Constant(_)
+        | CheckedExpression::NamedConstant { .. }
+        | CheckedExpression::UserCall { .. }
+        | CheckedExpression::IntegerOperation { .. }
+        | CheckedExpression::FloatOperation { .. }
+        | CheckedExpression::NumericConversion { .. }
+        | CheckedExpression::Reinterpret { .. }
+        | CheckedExpression::BooleanOperation { .. }
+        | CheckedExpression::EnumEquality { .. }
+        | CheckedExpression::BoxDeref { .. }
+        | CheckedExpression::ConstructStruct { .. }
+        | CheckedExpression::ConstructEnum { .. }
+        | CheckedExpression::ProjectValue { .. } => None,
     }
-    for child in expression_children(expression) {
-        visit_read_bindings(child, note);
+}
+
+/// [PAR-1] a `let`'s defined binding is a write path, and a statement that
+/// uses a local reference variable reads that binding, which holds what the
+/// reference's formation captured; the path the reference names is read or
+/// written separately, as the use requires [REF-1].
+fn push_reference_holder_read(
+    places: &PlaceMap,
+    binding: BindingId,
+    node: &NodePath,
+    footprint: &mut Footprint,
+) {
+    if let Some(place) = places.reference_holder(binding) {
+        footprint.operand_reads.push(Access {
+            place,
+            argument: node.clone(),
+        });
     }
 }
 
@@ -1515,7 +1565,9 @@ pub(super) fn visit_read_bindings(
 /// reference names a path and reads no content beyond its own index and
 /// endpoint atoms [REF-1, REF-4], so it contributes nothing here — the
 /// callee's declared row already covers whatever it reaches through that
-/// reference.
+/// reference. Naming a local reference variable, to pass it, read through
+/// it or form a range from it, reads that variable's own binding as well,
+/// which the `let` that formed it writes [PAR-1].
 ///
 /// The match is exhaustive on purpose. A future expression form that reads
 /// caller storage must be classified here rather than silently contributing
@@ -1538,6 +1590,9 @@ fn collect_operand_reads(
                 argument: node.clone(),
             }));
     };
+    if let Some(binding) = named_binding(expression) {
+        push_reference_holder_read(places, binding, node, footprint);
+    }
     match expression {
         // Reads no caller storage of its own.
         CheckedExpression::Constant(_)
