@@ -1877,9 +1877,10 @@ impl Reasoning<'_, '_, '_> {
         Some(proof)
     }
 
-    /// [OWN-7] the proof `affine` gives that two ranges of one containing
-    /// path are disjoint, over the images their formations filed or, for a
-    /// range a row takes from a call's arguments, its endpoints' own.
+    /// [OWN-7] the proof `affine` gives that two ranges under containing
+    /// paths that are identical step for step or differ only in index steps
+    /// are disjoint, over the images their formations filed or, for a range a
+    /// row takes from a call's arguments, its endpoints' own.
     pub(super) fn prove_range_separation(
         &mut self,
         left: CapturedRange,

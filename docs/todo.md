@@ -1891,6 +1891,53 @@ condition under which it is taken up.
   it is unproved. Validate with both programs accepted, the same callee
   without its `ensures` still ending the reference, and a reference below
   the slot still dying by REF-2's prefix rule.
+- **Two range steps are identical only as one formation.** OWN-7 compares
+  two ranges, or an index and a range, under containing paths that are
+  identical step for step or differ only in index steps. The checker counts
+  two range steps as identical only when they come from one formation, so
+  after `let left = &deref(values)[a..b];` and
+  `let right = &deref(values)[a..b];`, with `a` and `b` unwritten between
+  them, a call passing `&deref(left)[0_u64..2_u64]` and
+  `&deref(right)[2_u64..4_u64]` is refused with EFF-5 although both frames
+  captured the same endpoints. The v0.73 checker refuses it too. The
+  specification does not say whether two range steps whose captured
+  endpoints are equal are identical; whether the checker proves such steps
+  identical from their endpoints or OWN-7 defines a range step's identity by
+  its formation is the owner's choice. Validate with that call once the
+  ruling admits or refuses it. Found by the recheck of PR #141's
+  containing-path ruling.
+- **An EFF-5 refusal for runs below different range frames names the
+  runs.** For runs `&deref(left)[0_u64..2_u64]` and
+  `&deref(right)[2_u64..4_u64]` of frames `left = &deref(values)[a..b]` and
+  `right = &deref(values)[c..d]`, the residual quotes the complete paths and
+  the repair asks to prove that one ends at or before the other starts,
+  which the quoted runs `0_u64..2_u64` and `2_u64..4_u64` already satisfy.
+  The unproved pair is the frames: proving `b <= c` separates everything
+  below them. Name the first pair of differing range steps and ask for their
+  ordering. Validate with `eff5-neg-ranges-below-different-range-frames-overlap`
+  and the same-endpoint program in the item above, each pinned with a
+  repaired source that is accepted. Found by the recheck of PR #141's
+  containing-path ruling.
+- **OP-11 admits equal-depth slots under one identical array or window
+  only.** The checker also admits them under containing paths that differ
+  only in index steps: `swap(first: &deref(outer)[i][k], second:
+  &deref(outer)[j][l])` with nothing relating `i` and `j` is accepted by the
+  v0.73 and v0.74 checkers. Two slots of equal depth are one storage or two
+  disjoint ones, so the acceptance is sound, but the checker admits calls
+  the specification's wording refuses, the gap the owner closed for OWN-7's
+  range families on 2026-09-26. Decide whether OP-11 states the relation
+  the checker implements or the checker requires one identical array or
+  window. Validate with that swap. Found by the recheck of PR #141's
+  containing-path ruling.
+- **A range below a subscript of a range reference is not formed.**
+  `&deref(strip)[i][1_u64..3_u64]`, where `strip` is a range reference, is
+  refused as the unsupported capability `ReferenceFormation` by the v0.73
+  and v0.74 checkers: the re-slicing branch in `check/references.rs` refuses
+  any step between the `deref` and the range. REF-4 admits the form, and
+  binding the row first, `let row = &deref(strip)[i];` and then
+  `&deref(row)[1_u64..3_u64]`, is accepted. Validate with the direct form
+  accepted and its separations and REF-2 invalidations matching the bound
+  form. Found by the recheck of PR #141's containing-path ruling.
 - **Member names `len`, `cap` and `head` are classified by spelling in two
   paths.** Contract clauses and subscripted body places pick the measure
   route by the member's name before its type is known, so a writer's field
