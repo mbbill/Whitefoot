@@ -843,9 +843,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 (formal.get(left.origin), formal.get(right.origin))
                             && Self::separable_by_position(left_formal, right_formal).is_some()
                         {
-                            "this call gives these two entries of the callee's row the same positions: pass positions this call proves do not overlap, or declare one `writes` entry of their common path in the callee's row instead"
+                            "this call gives these two entries of the callee's row the same positions: pass positions this call proves do not overlap, or replace the callee's row entries at or below their common path with one `writes` entry of that path"
                         } else if left.argument == right.argument {
-                            "these two entries of the callee's row may reach overlapping places through one argument, and no position this call passes separates them: declare one `writes` entry of their common path in the callee's row instead"
+                            "these two entries of the callee's row may reach overlapping places through one argument, and no position this call passes separates them: replace the callee's row entries at or below their common path with one `writes` entry of that path"
                         } else {
                             "pass places that do not overlap, or pass the shared place through one argument only"
                         },
