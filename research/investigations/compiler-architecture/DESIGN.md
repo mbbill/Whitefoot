@@ -340,6 +340,28 @@ and applied (`design/log.md`, 2026-09-25).
    which can stay alongside the dispositions to spare them. Validation:
    identical verdicts, rules and locations on the corpus. Tree: a new
    decision, `design/compiler/acceptance-records.md` (owner-approved).
+   Done on the follow-up branch. The checker forms the records in one walk
+   over each completed function (`semantic/check/obligations.rs`), exhaustive
+   over every statement, expression and place form, once call requirements
+   are installed, rather than at each admission site: the walk sees only the
+   final attempt's body and cannot miss a form without failing to compile,
+   and it is independent of the engine's walk and reachability. The records
+   carry the rule, fixed once; OP-14 comes from the checker's operand-row
+   table, not the callee spelling. The engine answers each record by its
+   site, family and conjunct (`answer_records`), a separation also by its
+   query, and records and judgments sharing one identity pair in the order
+   they were made, so the contract rests on their counts agreeing. The
+   completion review found two separations at one call sharing an identity
+   before the query was part of it: a valid program failed as a contract
+   disagreement, and a unit test now pins it. Acceptance
+   (`semantic/check/acceptance.rs`) reports the first
+   undischarged answered record in the former order, and treats unanswered
+   records alone, or a judgment that answers none, as a compiler failure,
+   since they mean the checker and the engine disagree and are no source
+   rejection. The corpus and the module graphs emit identical LLVM,
+   diagnostics and exit codes. With the engine's place-subscript judgment
+   disabled, 54 programs the unchanged compiler rejects fail closed instead,
+   where the former acceptance, given the same engine, accepted 43 of them.
 
 ### P2. Component boundaries
 
@@ -353,6 +375,25 @@ and applied (`design/log.md`, 2026-09-25).
    verdicts; the 155 entailment tests read only `FunctionEntailment`.
    Supersedes the current `docs/todo.md` plan for `flow.rs`. Tree: a new
    decision, `design/compiler/engine-components.md` (owner-approved).
+   Done on the follow-up branch, in three behavior-preserving steps.
+   - **Sub-contexts.** The 36 fields became `Input`, `Vocabulary` (the ledger
+     and the ordinals numbering its roots included), `Output` and `Frames`.
+   - **Receivers.** Each of the 386 methods then took as its receiver the
+     narrowest part that it and its callees touch: 76 are on `Input`, 58 on
+     `Vocabulary`, 154 on `Reasoning` (inputs with the vocabulary), 22 on
+     `Judging` (with outputs), 36 stay on `Analyzer`, which owns the walk,
+     and 40 became free functions.
+   - **Modules.** The methods moved into the component modules listed above,
+     with `sources`, `results`, `conversions` and `operation_facts` kept. The
+     types and the entry points stay in `flow.rs`, now 2,366 lines; no module
+     exceeds 3,200.
+
+   The corpus and the module graphs emit identical LLVM, diagnostics and
+   exit codes after each step, and the unit tests, the entailment tests'
+   ledgers included, pass. Main changed the flow while the branch was open,
+   and the merge reapplied the three steps to main's flow with the one-shot
+   scripts that made them, which reproduce the original steps byte for byte;
+   the merged compiler was checked the same way against main's.
 2. **Checker components.** A `TypeContext` that can intern during body checks
    (removing `DeferredNominal`'s restarts of whole function walks), a
    read-only `DeclarationInventory` and a per-attempt `BodyChecker` owning its

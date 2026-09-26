@@ -105,6 +105,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for (parameter, formal) in function.parameters.iter_mut().zip(&signature.parameters) {
             parameter.name.clone_from(&formal.name);
         }
+        self.form_function_obligation_records(&mut function)?;
         let entailment =
             self.with_contract_context(&function, |context| analyze_function(&function, context));
         function.entailment = entailment;
@@ -368,6 +369,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             allocates: false,
             call_separations: Vec::new(),
             permission_separation_queries: Vec::new(),
+            obligations: Vec::new(),
             entailment: FunctionEntailment::default(),
         })
     }

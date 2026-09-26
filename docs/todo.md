@@ -308,27 +308,16 @@ rarely insert at the same place.
   blocks a program or an experiment, and close when that comparison is made
   and the owner rules on it.
 
-- **The checker/engine acceptance contract is written nowhere.**
-  `entailment_rejection` (`compiler/src/semantic/check.rs`, 567 lines) decides
-  acceptance by listing the engine's outcome lists by hand, maps obligation
-  families to rules twice and selects OP-14 by the callee spelling
-  `free_empty`. A mandatory outcome list added without a matching arm would be
-  accepted. The [architecture investigation](../research/investigations/compiler-architecture/DESIGN.md#f2-rules-implemented-twice-with-nothing-checking-that-they-agree)
-  proposes explicit obligation records, one disposition each and one
-  acceptance query (its P1.3), which `design/compiler/acceptance-records.md`
-  now records. Validate with identical verdicts, rules and locations on the
-  conformance corpus and test programs, and a deliberately dropped
-  disposition that rejects. Close when acceptance is one query over the
-  records.
-
-- **Rules recognized by spelling or implemented twice.** OP-14 is selected
-  by the callee spelling `free_empty` (`compiler/src/semantic/check.rs`) and
-  the backend recognizes OP-11's row by symbol spelling
-  (`compiler/src/backend/emitter.rs`); both hold only because TYPE-6 rejects a
-  source declaration that collides with the prelude. CALL-6's consistency
-  check keeps its own closure (`compiler/src/semantic/check/publication.rs`)
-  beside the ENT-4 closure the specification names, and INV-1 affine formation
-  and call-goal images are each formed in both the checker and the flow.
+- **Rules recognized by spelling or implemented twice.** The checker's
+  operand-row table (`compiler/src/semantic/check/generics/operands.rs`)
+  recognizes the OP-10, OP-11 and OP-14 rows by their prelude spelling, and
+  an OP-14 record takes its rule from it; the backend recognizes OP-11's row
+  by symbol spelling (`compiler/src/backend/emitter.rs`). Both hold only
+  because TYPE-6 rejects a source declaration that collides with the
+  prelude. CALL-6's consistency check keeps its own closure
+  (`compiler/src/semantic/check/publication.rs`) beside the ENT-4 closure the
+  specification names, and INV-1 affine formation and call-goal images are
+  each formed in both the checker and the flow.
   Select by PRE-1 operation identity, route CALL-6 through an isolated
   ordinary query, and form each image once. Validate with identical verdicts
   and a prelude-spelled source declaration that still reaches neither path.
@@ -1213,7 +1202,7 @@ rarely insert at the same place.
   payloads (EFF-5, OP-12, REF-2) spell resolved places through
   `render_resolved_place` in `compiler/src/semantic/check/expressions/places.rs`,
   while ENT-6 residuals and goals use `render_place` in
-  `compiler/src/semantic/entailment/flow.rs`, which still renders a payload
+  `compiler/src/semantic/entailment/flow/render.rs`, which still renders a payload
   step by its variant and field ordinals and a literal subscript offset
   without its `_u64` suffix. One renderer shared through a small naming seam
   would remove the drift that produced the `<binding:N>` leak; the cost is
@@ -1235,7 +1224,7 @@ rarely insert at the same place.
   fix left three: the FN-9 `relation` field prints the normalized relation
   with unsuffixed literals, such as `"w.value - 0 <= -1"` for
   `ensures result < 0_T`; the goal-literal renderer in
-  `compiler/src/semantic/entailment/flow.rs` falls back to
+  `compiler/src/semantic/entailment/flow/render.rs` falls back to
   `format!("{other:?}")` for a value it has no source form for, such as an
   array or struct constant; and the SET-1 `InvalidSetTarget` payload prints
   `root_class: format!("{class:?}")`, a resolver class name. Render each in
@@ -1394,45 +1383,18 @@ rarely insert at the same place.
 
 ## Code structure
 
-- **The entailment flow module has outgrown one reader.**
-  `compiler/src/semantic/entailment/flow.rs` has 17,275 lines, 15,040 of them
-  in one `impl Analyzer` block; it grew from 8,670 lines on 2026-09-01 over 154
-  commits. `compiler/src/semantic/entailment/state.rs` (7,755 lines, including
-  a 1,729-line inline test module) and the tests in
-  `compiler/src/semantic/tests/entailment.rs` (10,996 lines, 155 tests) grew
-  with it. An agent reads such a file only in slices, and every
-  responsibility's changes land in the same file. Moving methods into files
-  would not separate its state: child modules take `use super::*` and
-  `pub(super)` methods on the one 37-field `Analyzer`, and the section markers
-  no longer match what they enclose. Split the state first into typed
-  sub-contexts, a vocabulary (terms, goals, ledger, atoms), read-only inputs,
-  outputs and walk frames, then move code along the components the
-  [architecture investigation](../research/investigations/compiler-architecture/DESIGN.md#p2-component-boundaries) lists (its
-  P2.1, which `design/compiler/engine-components.md` now records). `state.rs`
-  can move its test
-  module to its own file and its dense-closure algorithms apart from the fact
-  state and ledger types; the tests can group by the section they exercise.
-  Validate that each move changes no behavior: identical `make check` results
-  and a diff of moved items and module declarations only. Split when no open
-  branch has large edits in these files, or one section at a time; close when
-  every file named here is under 4,000 lines.
-
-- **The checker's program pass shares one file with its signature and goal
-  code.** `compiler/src/semantic/check.rs` has 4,633 lines, 3,830 of them in
-  one `impl Checker` block; the modular compilation work added about 600
-  (module inventories, supplied function actuals, receipt wiring). `check/`
-  already holds sibling `impl Checker` files, so the split moves methods, not
-  types: the program pass (`check_program`, `analyze_function_inventory`,
-  `function_actual_ids`) into `check/program.rs`, the signature and effect-row
-  checks (`check_function_signature_body`, `effect_row_difference`,
-  `render_effect_path`) into `check/signatures.rs`, and goal instantiation
-  (`instantiate_goal_expression`, `instantiate_goal_operation`,
-  `install_expression_call_requirements`) into `check/goals.rs`. Validate that
-  each move changes no behavior: identical `make check` results and a diff of
-  moved items and module declarations only. Close when the file is under 4,000
-  lines. The moves keep the one 49-field `Checker`; separating its state into
-  a type context, a declaration inventory and a per-attempt body checker is
-  the [architecture investigation](../research/investigations/compiler-architecture/DESIGN.md#p2-component-boundaries)'s P2.2.
+- **The entailment state module and its tests have outgrown one reader.**
+  `compiler/src/semantic/entailment/state.rs` has 7,737 lines, including a
+  1,729-line inline test module, and the tests in
+  `compiler/src/semantic/tests/entailment.rs` have 10,920 lines and 156
+  tests. The flow itself is divided into its sub-contexts and component
+  modules (`design/compiler/engine-components.md`), none over 3,200 lines.
+  `state.rs` can move its test module to its own file and its dense-closure
+  algorithms apart from the fact state and ledger types; the tests can group
+  by the flow component they exercise. Validate that each move changes no
+  behavior: identical `make check` results and a diff of moved items and
+  module declarations only. Split when no open branch has large edits in
+  these files; close when both are under 4,000 lines.
 
 - **LLVM emission writes and then patches text.**
   `compiler/src/backend/emitter.rs` inserts entry allocas by byte offset and
