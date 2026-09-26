@@ -253,7 +253,8 @@ agreed the same day to fix those pairs as overlapping; see
 
 The rule, in kernel-spec v0.74:
 
-1. [OWN-7] An index step and a range step under one containing path are
+1. [OWN-7] An index step and a range step under containing paths that are
+   identical step for step, or differ only in index steps, are
    disjoint when the ProofContext proves `index < range.start`,
    `range.end <= index` or `range.end <= range.start`; a proved separation
    separates everything below both.
@@ -352,6 +353,17 @@ entry state's `r.len - 1`, and nothing used that either.
   `index < lo`, `hi <= index` and `hi <= lo` excludes `k = index`. Steps
   below the index and below the range are relative to different frames, so
   only a separation proved at this pair separates their descendants.
+- Containing paths. Two containing paths that differ only in index steps
+  select one storage or two, since an index is an absolute coordinate:
+  where their offsets are equal the paths name one storage, where the
+  orderings apply, and where they differ, different storages. Containing
+  paths that differ in a range step are frames every later step is relative
+  to, so they are not compared. The checker already separated the first
+  kind, and v0.73 accepted two ranges formed at a call below unproved row
+  indices; the owner ruled on 2026-09-26 that OWN-7 state that relation.
+  The cases `own7-pos-*-below-unproved-row-indices-separate` pin the three
+  forms, and `eff5-neg-ranges-below-different-range-frames-overlap` the
+  refused frames.
 - Every slot of a range is below `hi`, so `hi <= r.len` puts it below the
   append slot and every free slot, and an empty range holds no slot. Every
   range overlapping `r.last` and `r.filled` is a fixed answer, as it is for
