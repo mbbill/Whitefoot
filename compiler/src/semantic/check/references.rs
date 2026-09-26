@@ -664,9 +664,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<(), CheckStop> {
         // [REF-1] a reference keeps the index value its formation read, so a
         // write of that binding leaves the reference valid but ends the
-        // binding's spelling as a name for its index. [EFF-1] An index that
-        // read a parameter's call value still names the row's index
-        // parameter, and the parameter no longer holds that value.
+        // binding's spelling as a name for its index. [EFF-1] An index or a
+        // range endpoint that read a parameter's call value still names the
+        // row's index parameter, and the parameter no longer holds that
+        // value.
         if written.path.is_empty()
             && let PlaceRoot::Binding(binding) = written.root
         {
@@ -680,11 +681,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             {
                 for path in &mut reference.paths {
                     if call_value {
-                        call_value_captures.extend(
-                            path.spelled_indices()
-                                .filter(|(_, spelled)| *spelled == binding)
-                                .map(|(capture, _)| capture),
-                        );
+                        call_value_captures.extend(path.binding_captures(binding));
                     }
                     path.supersede_binding(binding);
                 }
@@ -1415,32 +1412,34 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// index expression, and a row evaluates its index parameter once at the
     /// call, so this is the only index a declared row admits.
     ///
-    /// A spelled index reads the binding's current value, which is the call's
-    /// while the parameter still holds it. A superseded index read the value
-    /// before the write that superseded it, which is the call's when the
-    /// supersession recorded it so.
+    /// Every capture of a parameter that still holds its call value read that
+    /// value, since no path to here wrote it. After a write, a capture read
+    /// the call value exactly when the write, or the loop header it reached,
+    /// recorded it so: a superseded index, or a range endpoint, which keeps
+    /// its term.
     fn captured_parameter(
         &self,
         captured: CapturedValue,
         bindings: &HashMap<DeclarationId, LocalBinding>,
     ) -> Option<DeclarationId> {
         let local = match captured.term {
-            CapturedTerm::Binding(binding) => bindings
-                .values()
-                .find(|local| local.binding == binding && local.call_value)?,
-            CapturedTerm::Superseded(binding)
-                if self
-                    .call_value_captures
-                    .borrow()
-                    .contains(&captured.capture) =>
-            {
+            CapturedTerm::Binding(binding) | CapturedTerm::Superseded(binding) => {
                 bindings.values().find(|local| local.binding == binding)?
             }
-            CapturedTerm::Superseded(_)
-            | CapturedTerm::Literal(_)
-            | CapturedTerm::Const(_)
-            | CapturedTerm::Opaque => return None,
+            CapturedTerm::Literal(_) | CapturedTerm::Const(_) | CapturedTerm::Opaque => {
+                return None;
+            }
         };
+        let holds_call_value =
+            matches!(captured.term, CapturedTerm::Binding(_)) && local.call_value;
+        if !holds_call_value
+            && !self
+                .call_value_captures
+                .borrow()
+                .contains(&captured.capture)
+        {
+            return None;
+        }
         self.resolved
             .declarations()
             .iter()
