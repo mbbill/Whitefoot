@@ -201,12 +201,7 @@ struct ReturnLeaves {
 impl ReturnLeaves {
     /// Adds `copies` repetitions of `ty`'s leaves, mirroring the
     /// representation `llvm_type` emits for it.
-    fn add(
-        &mut self,
-        program: &IrProgram,
-        ty: IrType,
-        copies: u64,
-    ) -> Result<(), BackendFailure> {
+    fn add(&mut self, program: &IrProgram, ty: IrType, copies: u64) -> Result<(), BackendFailure> {
         match ty {
             // `i8`, `i1`, the integer widths, a pointer, and a Box owner's
             // pointer each occupy one integer-class register.
