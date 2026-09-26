@@ -505,6 +505,21 @@ impl ResolvedPlace {
         }
     }
 
+    /// The same path once the index `capture` read from `binding` is
+    /// superseded on another incoming edge of a join: the join cannot tell
+    /// the edges apart, so after it the spelling names that value on none
+    /// [`Self::supersede_binding`].
+    pub(crate) fn supersede_capture(&mut self, capture: CaptureId, binding: BindingId) {
+        for step in &mut self.path {
+            if let PlaceStep::Index(index) = step
+                && index.capture == capture
+                && index.term == CapturedTerm::Binding(binding)
+            {
+                *index = CapturedValue::new(capture, CapturedTerm::Superseded(binding));
+            }
+        }
+    }
+
     /// The bindings whose spelling still names an index of this path, which
     /// a later write of one of them supersedes [`Self::supersede_binding`].
     pub(crate) fn spelled_index_bindings(&self) -> impl Iterator<Item = BindingId> + '_ {
@@ -513,6 +528,18 @@ impl ResolvedPlace {
                 term: CapturedTerm::Binding(binding),
                 ..
             }) => Some(*binding),
+            _ => None,
+        })
+    }
+
+    /// The indices of this path a write of their binding superseded, each as
+    /// its capture and that binding.
+    pub(crate) fn superseded_indices(&self) -> impl Iterator<Item = (CaptureId, BindingId)> + '_ {
+        self.path.iter().filter_map(|step| match step {
+            PlaceStep::Index(CapturedValue {
+                capture,
+                term: CapturedTerm::Superseded(binding),
+            }) => Some((*capture, *binding)),
             _ => None,
         })
     }

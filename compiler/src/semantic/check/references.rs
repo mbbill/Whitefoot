@@ -231,11 +231,31 @@ impl ReferenceInfo {
     /// [REF-1] the join of two incoming edges: the union of the path sets,
     /// and the meet of the validity facts, because a check must hold on every
     /// incoming edge.
+    ///
+    /// An index one edge superseded is superseded after the join too, so the
+    /// same capture on both edges stays one member rather than two.
     pub(super) fn join(&mut self, other: &Self) {
         for path in &other.paths {
             if !self.paths.contains(path) {
                 self.paths.push(path.clone());
             }
+        }
+        let superseded = self
+            .paths
+            .iter()
+            .flat_map(ResolvedPlace::superseded_indices)
+            .collect::<Vec<_>>();
+        if !superseded.is_empty() {
+            let mut joined = Vec::with_capacity(self.paths.len());
+            for mut path in std::mem::take(&mut self.paths) {
+                for (capture, binding) in &superseded {
+                    path.supersede_capture(*capture, *binding);
+                }
+                if !joined.contains(&path) {
+                    joined.push(path);
+                }
+            }
+            self.paths = joined;
         }
         if let ReferenceValidity::Invalid(event) = &other.validity {
             self.invalidate(event.clone());
@@ -655,20 +675,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 for path in &mut reference.paths {
                     path.supersede_binding(binding);
                 }
-            }
-            // An enclosing loop whose header still spells an index with this
-            // binding reaches that header again after this write: the header
-            // grows, and the walk restarts from it (see
-            // `enter_loop_reference_header`).
-            let mut grown = false;
-            let mut superseded = self.loop_superseded_bindings.borrow_mut();
-            for (loop_id, spelled) in self.active_loop_captures.borrow().iter() {
-                if spelled.contains(&binding) {
-                    grown |= superseded.entry(*loop_id).or_default().insert(binding);
-                }
-            }
-            if grown {
-                return Err(CheckStop::ReferenceSummaryChanged);
             }
         }
         let include_equal = matches!(event, InvalidationEvent::PrefixMoved);
@@ -1615,6 +1621,39 @@ mod tests {
         let right = reference(0);
         left.join(&right);
         assert_eq!(left.paths.len(), 1);
+    }
+
+    /// [REF-1] an index one edge wrote the binding of after the formation is
+    /// superseded after the join: both edges still hold the one capture, so
+    /// the joined reference keeps one member, and the binding's spelling no
+    /// longer names its index. Another capture from the same binding keeps
+    /// its spelling.
+    #[test]
+    fn a_join_supersedes_an_index_one_edge_wrote() {
+        use crate::semantic::places::{CaptureId, CapturedTerm, CapturedValue};
+        let indexed = |capture: u32| {
+            let mut place = ResolvedPlace::binding(BindingId(0));
+            place.push_subscript(CapturedValue::new(
+                CaptureId::source(capture),
+                CapturedTerm::Binding(BindingId(1)),
+            ));
+            ReferenceInfo::formed(ReferenceKind::Single, place)
+        };
+        let mut unwritten = indexed(0);
+        let mut written = indexed(0);
+        written.paths[0].supersede_binding(BindingId(1));
+        unwritten.join(&written);
+        assert_eq!(unwritten.paths, written.paths);
+
+        let mut other_formation = indexed(1);
+        other_formation.join(&written);
+        assert_eq!(other_formation.paths.len(), 2);
+        assert_eq!(
+            other_formation.paths[0]
+                .spelled_index_bindings()
+                .collect::<Vec<_>>(),
+            [BindingId(1)]
+        );
     }
 
     /// [REF-1] classify when a contribution retains its entering shape and
