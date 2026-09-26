@@ -1587,8 +1587,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         declaration: crate::DeclarationId,
     ) -> Result<super::repairs::OpaqueStruct, CheckStop> {
         if !self
-            .declaring_module(declaration)
-            .is_some_and(|module| module.package() == crate::Package::Standard)
+            .declaration_home(declaration)
+            .is_some_and(|(package, _)| package == crate::Package::Standard)
         {
             return Ok(super::repairs::OpaqueStruct::Program);
         }

@@ -1199,33 +1199,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         declaration: DeclarationId,
         name: &str,
     ) -> String {
-        match self.declaring_module(declaration) {
-            Some(module) if module.package() == crate::Package::Standard => {
-                format!("std.{}.{name}", module.path().join("."))
-            }
-            Some(module) if !module.path().is_empty() => {
-                format!("{}.{name}", module.path().join("."))
-            }
+        match self.declaration_home(declaration) {
+            Some((crate::Package::Standard, path)) => format!("std.{}.{name}", path.join(".")),
+            Some((_, path)) if !path.is_empty() => format!("{}.{name}", path.join(".")),
             _ => name.to_owned(),
         }
     }
 
-    /// The module whose records declare a declaration; `None` for a PRE-1
-    /// declaration and in a source bundle [MOD-3].
-    pub(in crate::semantic::check) fn declaring_module(
+    /// The package and path of the module whose records declare a
+    /// declaration, as its key names them; `None` for a PRE-1 declaration
+    /// [MOD-3].
+    pub(in crate::semantic::check) fn declaration_home(
         &self,
         declaration: DeclarationId,
-    ) -> Option<&crate::ModuleRecord> {
-        self.resolved
-            .declaration(declaration)
-            .and_then(crate::DeclarationRecord::module)
-            .and_then(|module| {
-                self.resolved
-                    .syntax()
-                    .classified_bundle()
-                    .source_bundle()
-                    .module(module)
-            })
+    ) -> Option<(crate::Package, &[String])> {
+        match self.resolved.declaration(declaration)?.key().item() {
+            crate::ItemKey::Declared {
+                home: crate::ItemHome::Module { package, path, .. },
+                ..
+            } => Some((*package, path)),
+            _ => None,
+        }
     }
 
     /// The concrete function ids of a substitution's function-kind actuals
