@@ -664,17 +664,37 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<(), CheckStop> {
         // [REF-1] a reference keeps the index value its formation read, so a
         // write of that binding leaves the reference valid but ends the
-        // binding's spelling as a name for its index.
+        // binding's spelling as a name for its index. [EFF-1] An index that
+        // read a parameter's call value still names the row's index
+        // parameter, and the parameter no longer holds that value.
         if written.path.is_empty()
             && let PlaceRoot::Binding(binding) = written.root
         {
+            let call_value = bindings
+                .values()
+                .any(|local| local.binding == binding && local.call_value);
+            let mut call_value_captures = self.call_value_captures.borrow_mut();
             for reference in bindings
                 .values_mut()
                 .filter_map(|local| local.reference.as_mut())
             {
                 for path in &mut reference.paths {
+                    if call_value {
+                        call_value_captures.extend(
+                            path.spelled_indices()
+                                .filter(|(_, spelled)| *spelled == binding)
+                                .map(|(capture, _)| capture),
+                        );
+                    }
                     path.supersede_binding(binding);
                 }
+            }
+            drop(call_value_captures);
+            for local in bindings
+                .values_mut()
+                .filter(|local| local.binding == binding)
+            {
+                local.call_value = false;
             }
         }
         let include_equal = matches!(event, InvalidationEvent::PrefixMoved);
@@ -1391,22 +1411,36 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     /// The value parameter one captured index or endpoint read, when it read
-    /// one [EFF-1]: a signature never contains an index expression, so this
-    /// is the only index spelling a declared row admits.
+    /// that parameter's call value [EFF-1]: a signature never contains an
+    /// index expression, and a row evaluates its index parameter once at the
+    /// call, so this is the only index a declared row admits.
+    ///
+    /// A spelled index reads the binding's current value, which is the call's
+    /// while the parameter still holds it. A superseded index read the value
+    /// before the write that superseded it, which is the call's when the
+    /// supersession recorded it so.
     fn captured_parameter(
         &self,
         captured: CapturedValue,
         bindings: &HashMap<DeclarationId, LocalBinding>,
     ) -> Option<DeclarationId> {
-        // A superseded index still holds the value its formation read, so it
-        // names the parameter exactly as the spelled index did [REF-1].
-        let binding = match captured.term {
-            CapturedTerm::Binding(binding) | CapturedTerm::Superseded(binding) => binding,
-            CapturedTerm::Literal(_) | CapturedTerm::Const(_) | CapturedTerm::Opaque => {
-                return None;
+        let local = match captured.term {
+            CapturedTerm::Binding(binding) => bindings
+                .values()
+                .find(|local| local.binding == binding && local.call_value)?,
+            CapturedTerm::Superseded(binding)
+                if self
+                    .call_value_captures
+                    .borrow()
+                    .contains(&captured.capture) =>
+            {
+                bindings.values().find(|local| local.binding == binding)?
             }
+            CapturedTerm::Superseded(_)
+            | CapturedTerm::Literal(_)
+            | CapturedTerm::Const(_)
+            | CapturedTerm::Opaque => return None,
         };
-        let local = bindings.values().find(|local| local.binding == binding)?;
         self.resolved
             .declarations()
             .iter()
