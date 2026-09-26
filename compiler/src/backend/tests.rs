@@ -61,6 +61,7 @@ mod ranges;
 mod reinterpret;
 mod requires;
 mod resource_enums;
+mod result_abi;
 mod stack_ledger;
 mod system;
 mod tail_calls;
@@ -707,9 +708,47 @@ fn emitted_function<'module>(module: &'module str, name: &str) -> &'module str {
     &module[function_start..function_end]
 }
 
+/// The definition that carries one source function's emitted body: the
+/// function's own definition, or, for a result returned in registers, the
+/// internal destination-form body its public entry calls
+/// (compiler/src/backend/abi.rs).
+fn emitted_body<'module>(module: &'module str, name: &str) -> &'module str {
+    let body = format!("{name}.body");
+    if module.contains(&format!(" @wf_{body}(")) {
+        emitted_function(module, &body)
+    } else {
+        emitted_function(module, name)
+    }
+}
+
+/// The first-class aggregate type one emitted definition returns in
+/// registers (compiler/src/backend/abi.rs), checked against its expected
+/// scalar fields independently of the module's nominal numbering.
+fn register_result_type<'function>(
+    module: &str,
+    function: &'function str,
+    fields: &[&str],
+) -> &'function str {
+    let (result_type, _) = function
+        .strip_prefix("define ")
+        .and_then(|header| header.split_once(" @"))
+        .expect("an emitted definition header");
+    assert!(
+        result_type.starts_with("%wf.t"),
+        "the result returns as its named aggregate: {result_type}"
+    );
+    assert!(
+        module.contains(&format!("{result_type} = type {{ {} }}", fields.join(", "))),
+        "the returned aggregate has the expected scalar layout: {result_type}"
+    );
+    result_type
+}
+
 /// These fixtures construct every variant of a result with scalar fields.
-/// Check its typed caller destination and field writes independently of a
-/// preliminary whole-aggregate store or the module's nominal numbering.
+/// Check the typed `%wf.result` construction and field writes independently
+/// of a preliminary whole-aggregate store or the module's nominal numbering.
+/// `function` is the definition that constructs the result, as
+/// [`emitted_body`] finds it, and `%wf.result` is its destination.
 fn assert_scalar_result_fields(module: &str, function: &str, fields: &[&str]) {
     let mut initialized = vec![false; fields.len()];
     for line in function.lines() {
@@ -977,7 +1016,9 @@ fn main() -> status: ExitStatus pure {
 }
 "#;
     let llvm = emit(source);
-    assert!(emitted_drop_ids(emitted_function(&llvm, "make")).is_empty());
+    // `Cell` returns in registers, so `make`'s moves and drops are in its
+    // destination-form body (compiler/src/backend/abi.rs).
+    assert!(emitted_drop_ids(emitted_body(&llvm, "make")).is_empty());
 
     let cleanup = emitted_function(&llvm, "cleanup");
     let cleanup_drops = emitted_drop_ids(cleanup);

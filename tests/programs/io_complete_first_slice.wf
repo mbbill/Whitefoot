@@ -20,6 +20,10 @@ fn exercise(args: &Args, cwd: &DirectoryRead, out: &OutputStream, err: &OutputSt
       }
       match host_utf8_len(value: &text) {
         Ok(value: measured) => {
+          if measured == name_length {
+          } else {
+            return exit_status(code: 14_u8);
+          }
         }
         Err(error: invalid) => {
           return exit_status(code: 4_u8);

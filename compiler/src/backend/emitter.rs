@@ -24,7 +24,7 @@ mod slice;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Write;
 
-use super::abi::{FunctionAbi, ParameterAbi};
+use super::abi::{FunctionAbi, ParameterAbi, ResultAbi};
 pub use super::runtime::*;
 use super::storage::{FunctionStoragePlan, is_stored_aggregate};
 use super::target::{
@@ -479,7 +479,7 @@ fn ordinary_call_arguments(
 ) -> Result<String, BackendFailure> {
     let mut arguments = Vec::with_capacity(abi.parameters().len() + 1);
     if abi.result().uses_destination() {
-        arguments.push("ptr %wf.result".to_owned());
+        arguments.push(format!("ptr {RESULT_POINTER}"));
     }
     for ((value, _), parameter) in function.parameters().iter().zip(abi.parameters()) {
         arguments.push(incoming_parameter(program, *value, *parameter, "")?);
@@ -828,6 +828,26 @@ enum FunctionSlot {
     OwnedValue(usize),
     ArrayFillIndex(IrValueId),
     Address(IrValueId),
+    /// The slot a register-returned definition's public entry gives its
+    /// body to construct the result in.
+    Result,
+}
+
+/// Where a body constructs its stored result: its destination parameter,
+/// which for a register-returned result is its public entry's frame slot.
+const RESULT_POINTER: &str = "%wf.result";
+
+/// The internal symbol a register-returned definition's destination-form
+/// body is emitted under, beside the public entry that keeps `symbol`.
+///
+/// No other definition can hold it. A function outside the root module is
+/// spelled `path.name`, so a source function could take `<symbol>.body`
+/// only as a function `body` in a child module named after the entry's
+/// function, and [MOD-3] rejects a declaration that extends its module's
+/// path to a registered module. An instance's `$instance$` suffix and a
+/// compiler-owned `wf__` symbol hold spellings no IDENT has [FORM-3].
+fn result_body_symbol(symbol: &str) -> String {
+    format!("{symbol}.body")
 }
 
 struct PlannedFunctionSlot {
@@ -931,6 +951,36 @@ impl FunctionFramePlan {
         Ok(Self {
             target: target_plan,
             slots,
+            ordered,
+        })
+    }
+
+    /// The frame of a register-returned definition's public entry: the one
+    /// target-qualified slot at [`RESULT_POINTER`] its body constructs the
+    /// result in.
+    fn returned_value(
+        target: TargetLayout,
+        program: &IrProgram<'_, '_, '_>,
+        ty: IrType,
+    ) -> Result<Self, BackendFailure> {
+        let mut specifications = Vec::new();
+        let mut ordered = Vec::new();
+        push_function_slot(
+            &mut specifications,
+            &mut ordered,
+            FunctionSlot::Result,
+            TargetStorageType::source(ty),
+            None,
+        )?;
+        let target_plan = plan_target_frame(target, program, &specifications)
+            .map_err(BackendFailure::TargetLayout)?;
+        let slot = PlannedFunctionSlot {
+            logical_index: 0,
+            pointer: RESULT_POINTER.to_owned(),
+        };
+        Ok(Self {
+            target: target_plan,
+            slots: HashMap::from([(FunctionSlot::Result, slot)]),
             ordered,
         })
     }
@@ -1314,7 +1364,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     ///
     /// Returns where the frame prelude belongs, which is this block when there
     /// is one: an `alloca` is promotable only in the entry block.
-    fn emit_grain_entry(&mut self, abi: &FunctionAbi) -> Result<Option<usize>, BackendFailure> {
+    ///
+    /// `public` is the function's own ABI, which the clone's public symbol
+    /// keeps. A register-returned clone returns its value there, and this
+    /// variant's body stores it through its own destination.
+    fn emit_grain_entry(&mut self, public: &FunctionAbi) -> Result<Option<usize>, BackendFailure> {
         if self.grain.is_none() {
             return Ok(None);
         }
@@ -1324,7 +1378,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         if self.incoming.first().is_some_and(|edges| !edges.is_empty()) {
             return Err(BackendFailure::InvalidIr);
         }
-        let arguments = ordinary_call_arguments(self.program, self.function, abi)?;
+        let arguments = ordinary_call_arguments(self.program, self.function, public)?;
         let spent = RecursiveFrontiers::exhausted(self.function.name());
         let body = block_label(IrBlockId::from_index(0).map_err(|_| BackendFailure::InvalidIr)?);
         writeln!(self.output, "{GRAIN_ENTRY_LABEL}:").map_err(|_| BackendFailure::TextEmission)?;
@@ -1337,16 +1391,28 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
              {GRAIN_SPENT_LABEL}:"
         )
         .map_err(|_| BackendFailure::TextEmission)?;
-        if abi.result().uses_destination() {
-            writeln!(self.output, "  call void @{spent}({arguments})\n  ret void")
+        match public.result() {
+            ResultAbi::Destination(_) => {
+                writeln!(self.output, "  call void @{spent}({arguments})\n  ret void")
+                    .map_err(|_| BackendFailure::TextEmission)?;
+            }
+            ResultAbi::StoredValue(ty) => {
+                let result = llvm_type(self.program, ty)?;
+                writeln!(
+                    self.output,
+                    "  %wf.spent = call {result} @{spent}({arguments})\n  \
+                     store {result} %wf.spent, ptr {RESULT_POINTER}\n  ret void"
+                )
                 .map_err(|_| BackendFailure::TextEmission)?;
-        } else {
-            let result = llvm_type(self.program, abi.result().ty())?;
-            writeln!(
-                self.output,
-                "  %wf.spent = call {result} @{spent}({arguments})\n  ret {result} %wf.spent"
-            )
-            .map_err(|_| BackendFailure::TextEmission)?;
+            }
+            ResultAbi::Value(ty) => {
+                let result = llvm_type(self.program, ty)?;
+                writeln!(
+                    self.output,
+                    "  %wf.spent = call {result} @{spent}({arguments})\n  ret {result} %wf.spent"
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+            }
         }
         self.grain_next = Some("%wf.budget.next".to_owned());
         Ok(Some(anchor))
@@ -1360,16 +1426,28 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             self.reachable_blocks()?
         };
         self.incoming = self.collect_incoming(&reachable)?;
-        let abi = FunctionAbi::build(self.program, self.function)?;
+        // A declaration names a linked definition by its public ABI. A
+        // definition whose result returns in registers is emitted as its
+        // destination-form body under an internal symbol, followed by the
+        // public entry that returns the value.
+        let public = FunctionAbi::build(self.program, self.function)?;
+        let entry = !declaration && matches!(public.result(), ResultAbi::StoredValue(_));
+        let abi = if entry { public.body() } else { public.clone() };
         let symbol = match (self.sequential_clones, self.grain) {
             (Some(_), _) => sequential_clone_symbol(self.function.name()),
             (None, Some(_)) => recursion_budget_symbol(self.function.name()),
             (None, None) => source_symbol(self.function.name()),
         };
+        let body_symbol = if entry {
+            result_body_symbol(&symbol)
+        } else {
+            symbol.clone()
+        };
         write!(
             self.output,
-            "{} {} @{symbol}(",
+            "{} {}{} @{body_symbol}(",
             if declaration { "declare" } else { "define" },
+            if entry { "internal " } else { "" },
             if abi.result().uses_destination() {
                 "void".to_owned()
             } else {
@@ -1377,25 +1455,14 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             },
         )
         .map_err(|_| BackendFailure::TextEmission)?;
-        let result_address = abi.result().uses_destination();
-        if result_address {
-            self.output.push_str("ptr %wf.result");
+        let parameters = self.signature_parameters(&abi)?;
+        let mut head = Vec::with_capacity(parameters.len() + 2);
+        if abi.result().uses_destination() {
+            head.push(format!("ptr {RESULT_POINTER}"));
         }
-        for (index, ((value, _), parameter)) in self
-            .function
-            .parameters()
-            .iter()
-            .zip(abi.parameters())
-            .enumerate()
-        {
-            if index != 0 || result_address {
-                self.output.push_str(", ");
-            }
-            let facts = self.reference_parameter_facts(index, parameter.ty())?;
-            let incoming = incoming_parameter(self.program, *value, *parameter, &facts)?;
-            self.output.push_str(&incoming);
-        }
+        head.extend(parameters.iter().cloned());
         if declaration {
+            self.output.push_str(&head.join(", "));
             self.output.push_str(")\n\n");
             return Ok(self.output);
         }
@@ -1421,13 +1488,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         // is synthesized and is named by no source call: a writer's own
         // signature is the entry's, which is emitted unchanged.
         if self.grain.is_some() {
-            if !self.function.parameters().is_empty() || result_address {
-                self.output.push_str(", ");
-            }
-            self.output.push_str("i64 %wf.budget");
+            head.push("i64 %wf.budget".to_owned());
         }
+        self.output.push_str(&head.join(", "));
         self.output.push_str(") {\n");
-        let mut prelude_anchor = self.emit_grain_entry(&abi)?;
+        let mut prelude_anchor = self.emit_grain_entry(&public)?;
         for (index, block) in self.function.blocks().iter().enumerate() {
             if !reachable[index] {
                 continue;
@@ -1477,7 +1542,68 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             let anchor = prelude_anchor.ok_or(BackendFailure::InvalidIr)?;
             self.output.insert_str(anchor, &self.entry_prelude);
         }
+        if entry {
+            let text = self.public_entry(&symbol, &body_symbol, &public, &abi, parameters)?;
+            self.output.push_str(&text);
+        }
         Ok(self.output)
+    }
+
+    /// Every parameter of this definition's signature, with the facts the
+    /// checked program proved about each (compiler/backend-facts), and
+    /// without the destination pointer or a variant's budget.
+    fn signature_parameters(&self, abi: &FunctionAbi) -> Result<Vec<String>, BackendFailure> {
+        let mut parameters = Vec::with_capacity(abi.parameters().len());
+        for (index, ((value, _), parameter)) in self
+            .function
+            .parameters()
+            .iter()
+            .zip(abi.parameters())
+            .enumerate()
+        {
+            let facts = self.reference_parameter_facts(index, parameter.ty())?;
+            parameters.push(incoming_parameter(
+                self.program,
+                *value,
+                *parameter,
+                &facts,
+            )?);
+        }
+        Ok(parameters)
+    }
+
+    /// A register-returned definition's public entry: the slot its body
+    /// constructs the result in, the call, and the loaded value.
+    ///
+    /// The body is internal, so the entry is its one caller, and it is
+    /// never marked always-inline. The host therefore simplifies the body
+    /// in its destination form before it inlines the body here. An
+    /// always-inline body would be merged before that simplification and
+    /// would lose the loop shapes the destination form gives it.
+    fn public_entry(
+        &self,
+        symbol: &str,
+        body_symbol: &str,
+        public: &FunctionAbi,
+        body: &FunctionAbi,
+        mut head: Vec<String>,
+    ) -> Result<String, BackendFailure> {
+        let ty = public.result().ty();
+        let result = llvm_type(self.program, ty)?;
+        let frame = FunctionFramePlan::returned_value(self.target, self.program, ty)?
+            .render(self.program)?;
+        let mut arguments = ordinary_call_arguments(self.program, self.function, body)?;
+        if self.grain.is_some() {
+            head.push("i64 %wf.budget".to_owned());
+            arguments.push_str(", i64 %wf.budget");
+        }
+        Ok(format!(
+            "define {result} @{symbol}({}) {{\nentry:\n{frame}  \
+             call void @{body_symbol}({arguments})\n  \
+             %wf.returned = load {result}, ptr {RESULT_POINTER}\n  \
+             ret {result} %wf.returned\n}}\n\n",
+            head.join(", ")
+        ))
     }
 
     /// Source checking retains the conservative continuation of every loop
@@ -1988,12 +2114,14 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     .map_err(|_| BackendFailure::TextEmission)
             }
             IrTerminator::Return { value, drops } => {
-                let abi = FunctionAbi::build(self.program, self.function)?;
+                // A register-returned result's body constructs it through
+                // its destination; only the public entry returns the value.
+                let abi = FunctionAbi::build(self.program, self.function)?.body();
                 if self.value_type(*value) != Some(abi.result().ty()) {
                     return Err(BackendFailure::InvalidIr);
                 }
                 if abi.result().uses_destination() {
-                    self.store_value_at(*value, "%wf.result")?;
+                    self.store_value_at(*value, RESULT_POINTER)?;
                     self.emit_drops(drops)?;
                     return writeln!(self.output, "  ret void")
                         .map_err(|_| BackendFailure::TextEmission);

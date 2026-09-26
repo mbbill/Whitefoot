@@ -437,9 +437,13 @@ rarely insert at the same place.
 - **PriorityQueue has distinct sift and return-boundary costs.** The
   [complete library comparison](../research/experiments/container-representation/priority-library/RESULTS.md)
   measures retained scalar pop/push at 1.510--1.722 times same-algorithm C for
-  16/256 elements. WF returns push's Result through a pointer and clears its
-  inactive payload; C returns the scalar result in registers. Their causal
-  shares are unmeasured. Normal wide replacement also costs 1.178--1.289 times
+  16/256 elements. In that comparison WF returned push's Result through a
+  pointer and cleared its inactive payload; C returns the scalar result in
+  registers. The scalar cohort's three-leaf `Result<unit, u64>` now returns in
+  registers too ([result-register investigation](../research/investigations/result-registers/DESIGN.md#selection)),
+  while the inactive payload is still cleared and the wide cohort keeps its
+  destination. The causal shares, and what that change recovered, are
+  unmeasured. Normal wide replacement also costs 1.178--1.289 times
   the swap control at those sizes, while retained replacement reverses the
   direction. Separately, wide hole-sift C halves counted movement on large
   complete traces; ordinary WF swaps cannot be credited with that algorithm's
@@ -453,6 +457,57 @@ rarely insert at the same place.
   interference obligations; reopen for the indexed heap composition or an
   application dominated by these paths. Do not report universal native parity
   from the large scalar queue results.
+
+- **Small results beyond the per-leaf register budget still use a
+  destination.** A stored result returns in registers only when its scalar
+  leaves fit the x86-64 budget of three integer-class words and two floating
+  leaves ([result-register investigation](../research/investigations/result-registers/DESIGN.md#demotion-probe)).
+  A 16-byte result with four 32-bit fields, a small byte array and the 32-byte
+  opaque `ExitStatus` still pass through memory. So does every result with
+  four to eight integer words, or three to eight floating leaves, on AArch64.
+  Packing small integer leaves into shared words, or a per-target budget,
+  could carry some of these. Either one adds per-target lowering to emitted
+  code and to linked definitions. A third floating leaf on x86-64 cannot join
+  them: it returns through the x87 stack, which is not bit-exact for signaling
+  NaNs. Besides the launcher's `ExitStatus`, the maintained programs keep
+  eight surviving calls with four-word results, in `prefix_expression.wf`,
+  `owned_link_cursors.wf`, `option_slots.wf` and `containers/ordered.wf`,
+  which an AArch64 budget would return in registers
+  ([corpus](../research/investigations/result-registers/DESIGN.md#corpus)).
+  None is on a measured path, and the benefit is unmeasured. Reopen when a
+  maintained program keeps such a call on a measured path. Validate with
+  unchanged source and both lowerings compiled. Require the destination
+  round trip to disappear without a new demotion, a lost float bit pattern,
+  or a regression in the program's timing, on each target that changes.
+
+- **The hash-map `find` stays out of line because its probe loop is
+  unrolled first.** In `tests/programs/containers/hashmap.wf`, LLVM fully
+  unrolls `find`'s eight-slot probe loop while it optimizes `find` alone.
+  When the inliner then reaches `map_trace`, `find` costs 580 against the
+  `-O2` threshold of 225 (595 on main), so its seven calls stay out of line,
+  as do the three `remove` calls
+  ([lowering comparison](../research/investigations/result-registers/DESIGN.md#lowering)).
+  In that investigation's rejected merged-returns lowering, the loop was not
+  yet unrolled at that point. `find` cost 105 and `remove` 140, both were
+  inlined and then peeled, and the hash-map trace ran at 0.601 of main's time
+  against 0.956 for the selected lowering. Both lowerings return in
+  registers, so the inlining separates them. How much of that gain an
+  inlined, fully unrolled `find` keeps is unmeasured, as is whether other
+  small container operations with fixed probe loops behave the same way.
+  Candidate levers: loop metadata on the emitted probe loop that leaves it
+  to the late unroll pass, after inlining; an unroll threshold or pass order
+  in the pipeline the driver requests that runs full unrolling after the
+  inliner; or an inline hint on small container operations, which alone
+  raises the threshold only to 325. Each lever changes emitted code for every
+  program. Validate on unchanged source against a criterion fixed before
+  measuring: `find` and `remove` are inlined into `map_trace`, the
+  20,000,000-repetition hash-map trace gains beyond run-to-run variation,
+  `.text` across the maintained programs and container bundles stays within
+  a stated growth bound, and the maintained paired compute comparison
+  passes. Deferred because it is a host inlining-policy question separate
+  from the result ABI, with one program as evidence. Reopen when a
+  maintained workload's time is dominated by an out-of-line container
+  lookup, or when the driver's optimization pipeline is revisited.
 
 - **Indexed small-payload costs with retained boundaries need attribution.**
   The [native-cost record](../research/experiments/container-representation/indexed-library/RESULTS.md#remaining-native-costs)
@@ -839,7 +894,15 @@ rarely insert at the same place.
   Its identical-image control nevertheless retained a `records` W4 suspect at
   0.962815708 with four adverse pairs. The concrete PR 70 regression is repaired,
   while its cause and the earlier and remaining control variation are not
-  attributed. The [PR 78 hosted records inspection](../research/investigations/compute-model/DESIGN.md#records-w4-hosted-comparison-remains-unresolved)
+  attributed. The
+  [result-register placement controls](../research/investigations/result-registers/DESIGN.md#hosted-compute-regression)
+  show on a local Intel host that shifting records' two loop copies by 16 to
+  48 bytes, with no executed instruction changed, moves main or that
+  investigation's rejected merged-returns lowering by up to 18% and reverses
+  their order at W2 and W4, while moving only the runtime does not. Its
+  selected lowering's byte-identical records images read 1.073 at W1 on an
+  EPYC 7763 and 0.855, a single-width suspect, on an EPYC 9V74. The
+  [PR 78 hosted records inspection](../research/investigations/compute-model/DESIGN.md#records-w4-hosted-comparison-remains-unresolved)
   retains repeated W4 suspects at `30198a19` and `53c68c29`: the latter has
   wall/CPU ratios 0.898002/0.908317 with four adverse pairs, while its records
   null is not suspect. Exact x86 objects show unchanged hot work and runtime

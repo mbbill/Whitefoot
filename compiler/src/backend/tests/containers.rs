@@ -153,9 +153,15 @@ fn retained_priority_helpers_do_not_copy_the_inline_run() {
                 {
                     let name = name.trim_matches('"');
                     let plain = name.strip_prefix("wf_").unwrap_or(name);
-                    if ["push", "pop"].iter().any(|prefix| {
-                        plain == *prefix || plain.starts_with(&format!("{prefix}$instance$"))
-                    }) {
+                    // A register-returned helper's internal body belongs to
+                    // its public entry, the retained helper, and is inlined
+                    // into it (compiler/src/backend/abi.rs), so it is
+                    // neither retained nor counted.
+                    if !plain.ends_with(".body")
+                        && ["push", "pop"].iter().any(|prefix| {
+                            plain == *prefix || plain.starts_with(&format!("{prefix}$instance$"))
+                        })
+                    {
                         names.push(name.to_owned());
                         return line.strip_suffix(" {").unwrap().to_owned() + " noinline {\n";
                     }

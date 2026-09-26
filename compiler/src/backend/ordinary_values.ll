@@ -2,7 +2,31 @@
 ; A range reference crosses the call as its element pointer and count, as
 ; every WF call passes it. Their private C bodies take a pointer to one view,
 ; since C aggregate parameter coercions differ between target ABIs.
+; A result whose scalar leaves fit the return registers crosses as its LLVM
+; first-class value, one register per leaf; its private C body writes the
+; ordinary representation through a pointer, since C packs small struct
+; returns differently on each target.
 ; This file is library implementation, with no compiler operation dispatch.
+
+declare void @wf__body_host_utf8_len(ptr, ptr)
+
+; `Result<u64, Utf8Error>` is `{ i32, i64, i1 }`: the tag, the `Ok` value and
+; the one-bit `Utf8Invalid` tag, which the C body stores as a byte.
+define { i32, i64, i1 } @wf_host_utf8_len(ptr %value) {
+entry:
+  %result = alloca { i32, i64, i8 }, align 8
+  call void @wf__body_host_utf8_len(ptr %result, ptr %value)
+  %tag = load i32, ptr %result, align 8
+  %ok.field = getelementptr inbounds { i32, i64, i8 }, ptr %result, i32 0, i32 1
+  %ok = load i64, ptr %ok.field, align 8
+  %error.field = getelementptr inbounds { i32, i64, i8 }, ptr %result, i32 0, i32 2
+  %error.byte = load i8, ptr %error.field, align 8
+  %error = trunc i8 %error.byte to i1
+  %with.tag = insertvalue { i32, i64, i1 } poison, i32 %tag, 0
+  %with.ok = insertvalue { i32, i64, i1 } %with.tag, i64 %ok, 1
+  %returned = insertvalue { i32, i64, i1 } %with.ok, i1 %error, 2
+  ret { i32, i64, i1 } %returned
+}
 
 declare void @wf__body_host_copy_bytes(ptr, ptr, ptr, i64, i64)
 

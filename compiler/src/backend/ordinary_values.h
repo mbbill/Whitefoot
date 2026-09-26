@@ -2,8 +2,12 @@
 #define WHITEFOOT_ORDINARY_VALUES_H
 
 /* Ordinary linked definitions. These declarations describe the library's C
- * representation, not additional compiler metadata. All aggregates follow the
- * compiler's ordinary destination/result and content-address parameter ABI. */
+ * representation, not additional compiler metadata. Every C body writes its
+ * aggregate result through a destination pointer and takes aggregate
+ * parameters by content address. Where the compiler's ABI differs, a
+ * `wf__body_` C body sits behind the LLVM definition in ordinary_values.ll.
+ * The ABI differs for a split range argument, and for a result small enough
+ * for the return registers. */
 #include <stddef.h>
 #include <stdint.h>
 #include <stdalign.h>
@@ -50,7 +54,7 @@ uint64_t wf_args_count(const wf_value *args);
 void wf_arg_get(wf_value_result *result, const wf_value *args, uint64_t position);
 uint64_t wf_host_bytes_len(const wf_value *value);
 void wf__body_host_copy_bytes(wf_copy_result *result, const wf_value *value, wf_view *destination, uint64_t start, uint64_t end);
-void wf_host_utf8_len(wf_utf8_result *result, const wf_value *value);
+void wf__body_host_utf8_len(wf_utf8_result *result, const wf_value *value);
 void wf__body_host_copy_utf8(wf_copy_result *result, const wf_value *value, wf_view *destination, uint64_t start, uint64_t end);
 void wf_relative_path(wf_value_result *result, const wf_value *value);
 void wf_open_read(wf_open_result *result, wf_value *factory, const wf_value *root, const wf_value *path);
