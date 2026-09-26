@@ -3,9 +3,9 @@
 Whitefoot is a research systems programming language built around three
 properties:
 
-- **Safe.** A program the compiler accepts has no undefined behavior, and
-  nothing in it can panic or fail a runtime check. There is no `unsafe` to
-  opt out with.
+- **Safe.** A program the compiler accepts has no undefined behavior, given
+  a correct trusted base; it cannot panic, and no bounds, overflow or
+  conversion check runs in it. There is no `unsafe` to opt out with.
 - **Fast.** The safety comes from proofs checked at compile time, not from
   checks at run time, and the same proofs let the compiler drop bounds and
   overflow checks, tell LLVM which references do not alias, and run
@@ -49,9 +49,10 @@ fn squeeze(buf: &[u8]) -> kept: u64 writes(buf) {
 }
 ```
 
-In each of the seven safe Rust spellings of this loop we measured, the
-compiled loop keeps a runtime check of `kept`; removing it takes `unsafe` or a
-different algorithm, such as collecting the kept bytes into a new vector
+In each of the seven safe Rust spellings of this loop we measured (rustc
+1.98.1, x86-64), the compiled loop keeps a runtime check of `kept`; the
+measured spellings without one use `unsafe`, `retain` on an owned `Vec`, or a
+second buffer
 ([measurements](research/experiments/bounds-check-spellings/README.md#results)).
 Without the invariant, Whitefoot rejects the function and names the missing
 fact, `kept < deref(buf).len`. [Proofs without a solver, by
@@ -82,22 +83,25 @@ fn quicksort(v: &[u64]) -> result: unit writes(v) {
 }
 ```
 
-Compiled with `--par`, the two recursive calls run in parallel, because the
-compiler proves that `[0, p)` and `[p + 1, n)` do not overlap, and the result
-is the one the sequential program computes. Sorting 2 million numbers takes
-0.18 s sequentially and 0.07 s on 4 workers
+Compiled with `--par`, the two recursive calls run in parallel down to a
+depth derived from the number of workers, because the compiler proves that
+`[0, p)` and `[p + 1, n)` do not overlap, and the result is the one the
+sequential program computes. A run that sorts 2 million numbers takes 0.18 s
+sequentially and 0.07 s on 4 workers
 ([measurement](research/experiments/par-quicksort/README.md));
 `--par-ledger` prints every decision with its reason.
 
 ### Other uses of the same proofs
 
-- A proved `+` compiles to a plain add carrying LLVM's no-wrap flag
-  (`add nuw`), which later optimizations rely on.
+- A proved `+` compiles to a plain add carrying LLVM's no-wrap flag (`nuw`
+  unsigned, `nsw` signed), which the optimizer can use.
 - Each reference parameter reaches LLVM as `noalias`, C's `restrict`,
   because every call has proved that what one argument writes, no other
-  argument reaches.
+  argument reaches. The exception is `swap`, whose two arguments may be the
+  same place.
 - A loop whose iterations write their own elements, or combine one value with
-  one associative operation such as `+wrap`, can be split across workers.
+  one of a fixed set of associative and commutative operations such as
+  `+wrap`, can be split across workers.
 
 ## Safe: no undefined behavior, no panics, no failing checks
 
@@ -135,13 +139,13 @@ guarantee for every program it accepts. SPARK proves the same absence of
 runtime errors, with SMT solvers, as an analysis separate from compilation:
 the Ada compiler builds a program whether or not it has been proved. Wuffs
 checks similar proofs without a solver, but it is a language for libraries
-that decode file formats, and its code cannot make system calls or allocate
-memory.
+that parse, decode and encode file formats, and its code cannot make system
+calls or allocate memory.
 
 ## A small language
 
-Whitefoot is close to a safe C with simple generics, and reads more like C
-than like Rust. A program is functions, structs, enums, arrays and heap
+Whitefoot is close to a safe C with simple generics. Its syntax borrows from
+Rust, but a program has C's shape: functions, structs, enums, arrays and heap
 cells; a generic function takes its type arguments explicitly, as in
 `array_filled::<u8, 4>(value: 0_u8)`, and is compiled once per instance.
 Here is a cursor over a byte buffer:
@@ -163,9 +167,9 @@ fn next_byte(input: &[u8], cursor: &Cursor) -> result: Option<u8> reads(input), 
 ```
 
 A C programmer writes the same shape: a struct that holds a position, and a
-function that takes the buffer. A Rust cursor usually holds the buffer, so it
+function that takes the buffer. A Rust cursor that borrows its buffer
 carries a lifetime, `struct Cursor<'a> { input: &'a [u8], position: usize }`,
-and every type that contains one declares a lifetime parameter too. Whitefoot
+and a struct that stores one usually needs a lifetime parameter too. Whitefoot
 has no lifetimes at all. A reference can be bound to a local and passed to a
 call, but never stored in a struct or returned
 ([REF-3](spec/kernel-spec.md)), so it cannot outlive what it points to; a
@@ -176,16 +180,17 @@ one.
 The language also leaves out:
 
 - methods, traits and dynamic dispatch. A call names one function; generic
-  code receives the functions it uses as explicit compile-time arguments;
+  code receives the functions it uses as explicit compile-time arguments, an
+  `interface` names such a group, and nothing is looked up from a type;
 - operator overloading and implicit conversions. `+` on two `u64` values has
   one meaning, and a conversion is written `cvt`;
 - exceptions, unwinding and null. An error is a `Result` value and absence is
   an `Option`;
 - closures and function values.
 
-The cost is spelling: each statement does one operation, literals carry their
+The cost is spelling: an expression does one operation, literals carry their
 type (`1_u64`), arguments are named, and a reference is read through `deref`.
-Code is longer than C, and each meaning has one spelling.
+Code is longer than C, and each construct has one spelling.
 
 ## Articles
 
@@ -259,10 +264,10 @@ prints it as JSON.
 
 ## Evidence
 
-- [Specification](spec/kernel-spec.md): 130 numbered rules. Every rejection
+- [Specification](spec/kernel-spec.md): 132 numbered rules. Every rejection
   cites one rule and one location.
 - [Conformance suite](tests/conformance/): about 1,300 cases, more than 600
-  of which must be rejected under a named rule (69 distinct rules).
+  of which must be rejected under a named rule (70 distinct rules).
 - [Programs](tests/programs/) built and run by the test gate.
 - [Known defects and follow-up work](docs/todo.md), including compiler bugs.
 - [Experiments](research/experiments/README.md), negative results included.
