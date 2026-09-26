@@ -222,7 +222,7 @@ fn emit_arithmetic_obligations(source: &[u8]) -> String {
     let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
         panic!("backend test source must resolve");
     };
-    let SemanticOutcome::Complete(checked) = check_semantics_arithmetic_obligations(resolved)
+    let SemanticOutcome::Complete(checked) = check_semantics_arithmetic_obligations(&resolved)
     else {
         panic!("backend test source must check under the arithmetic switch");
     };
@@ -275,7 +275,7 @@ fn emit_division_obligations(source: &[u8]) -> String {
     let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
         panic!("backend test source must resolve");
     };
-    let SemanticOutcome::Complete(checked) = check_semantics_division_obligations(resolved) else {
+    let SemanticOutcome::Complete(checked) = check_semantics_division_obligations(&resolved) else {
         panic!("backend test source must check under the division switch");
     };
     assert!(

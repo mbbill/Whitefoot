@@ -74,7 +74,7 @@ pub(super) fn with_ir_layout<R>(
     let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
         panic!("ordinary ABI test source must resolve");
     };
-    let checked = match check_semantics(resolved) {
+    let checked = match check_semantics(&resolved) {
         SemanticOutcome::Complete(checked) => checked,
         other => panic!("ordinary ABI test source must check: {other:?}"),
     };

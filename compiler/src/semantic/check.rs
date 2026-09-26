@@ -659,7 +659,7 @@ struct Checker<'unit> {
 /// Unsupported language families remain explicit compiler capability results;
 /// only a proved numbered-rule violation becomes [`SemanticOutcome::SourceIssue`].
 #[must_use]
-pub fn check_semantics(resolved: ResolvedSyntaxUnit) -> SemanticOutcome {
+pub fn check_semantics(resolved: &ResolvedSyntaxUnit) -> SemanticOutcome {
     check_semantics_with(resolved, true, None)
 }
 
@@ -673,7 +673,7 @@ pub fn check_semantics(resolved: ResolvedSyntaxUnit) -> SemanticOutcome {
 /// permission table, checks without receipts.
 #[must_use]
 pub(crate) fn check_semantics_with_receipts(
-    resolved: ResolvedSyntaxUnit,
+    resolved: &ResolvedSyntaxUnit,
     receipts: &dyn receipts::ProofReceipts,
 ) -> SemanticOutcome {
     check_semantics_with(resolved, true, Some(receipts))
@@ -686,7 +686,7 @@ pub(crate) fn check_semantics_with_receipts(
 /// exactly one path.
 #[cfg(test)]
 #[must_use]
-pub(crate) fn check_semantics_dark(resolved: ResolvedSyntaxUnit) -> SemanticOutcome {
+pub(crate) fn check_semantics_dark(resolved: &ResolvedSyntaxUnit) -> SemanticOutcome {
     check_semantics_with(resolved, false, None)
 }
 
@@ -695,7 +695,7 @@ pub(crate) fn check_semantics_dark(resolved: ResolvedSyntaxUnit) -> SemanticOutc
 #[cfg(test)]
 #[must_use]
 pub(crate) fn check_semantics_arithmetic_obligations(
-    resolved: ResolvedSyntaxUnit,
+    resolved: &ResolvedSyntaxUnit,
 ) -> SemanticOutcome {
     check_semantics_with(resolved, true, None)
 }
@@ -705,35 +705,32 @@ pub(crate) fn check_semantics_arithmetic_obligations(
 #[cfg(test)]
 #[must_use]
 pub(crate) fn check_semantics_division_obligations(
-    resolved: ResolvedSyntaxUnit,
+    resolved: &ResolvedSyntaxUnit,
 ) -> SemanticOutcome {
     check_semantics_with(resolved, true, None)
 }
 
 fn check_semantics_with(
-    resolved: ResolvedSyntaxUnit,
+    resolved: &ResolvedSyntaxUnit,
     reject_entailment: bool,
     receipts: Option<&dyn receipts::ProofReceipts>,
 ) -> SemanticOutcome {
     let preflight = if resolved.postconditions().is_empty() {
         Ok(())
     } else {
-        Checker::new(&resolved, reject_entailment, None).and_then(|mut checker| {
+        Checker::new(resolved, reject_entailment, None).and_then(|mut checker| {
             let items = checker.item_declarations()?;
             checker.preflight_postcondition_selectors(&items)
         })
     };
     let result = preflight.and_then(|()| {
-        Checker::new(&resolved, reject_entailment, receipts).and_then(|mut checker| {
+        Checker::new(resolved, reject_entailment, receipts).and_then(|mut checker| {
             let result = checker.check_program();
             checker.finish_musttail_checks(result)
         })
     });
     match result {
-        Ok(data) => SemanticOutcome::Complete(Box::new(CheckedProgram {
-            _resolved: resolved,
-            data,
-        })),
+        Ok(data) => SemanticOutcome::Complete(Box::new(CheckedProgram { data })),
         Err(CheckStop::Issue(issue)) => SemanticOutcome::SourceIssue { issue: *issue },
         Err(CheckStop::Resolution(issue)) => SemanticOutcome::ResolutionIssue { issue: *issue },
         Err(CheckStop::Unsupported(unsupported)) => SemanticOutcome::Unsupported { unsupported },

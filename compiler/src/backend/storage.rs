@@ -1393,7 +1393,7 @@ fn main() -> status: std::process::ExitStatus pure {
         let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
             panic!("resolve")
         };
-        let checked = match check_semantics(resolved) {
+        let checked = match check_semantics(&resolved) {
             SemanticOutcome::Complete(checked) => checked,
             other => panic!("semantics: {other:?}"),
         };

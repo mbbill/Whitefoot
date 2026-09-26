@@ -31,9 +31,9 @@ use crate::{
     ACTIVE_KERNEL_SPEC_HASH, BackendFailure, CanonicalLimits, CanonicalOutcome,
     CanonicalSyntaxUnit, CheckedProgram, EntryRejection, EntryRequest, FinalizeLimits,
     FinalizeOutcome, LexLimits, LexOutcome, LoweringFailure, ParseLimits, ParseOutcome,
-    ResolutionOutcome, SemanticOutcome, SourceBundle, SourceInput, SourceLimits, TerminalLimits,
-    TerminalOutcome, audit_canonical, check_semantics, classify_terminals, finalize, lex, parse,
-    parse_graph, resolve,
+    ResolutionOutcome, ResolvedSyntaxUnit, SemanticOutcome, SourceBundle, SourceInput,
+    SourceLimits, TerminalLimits, TerminalOutcome, audit_canonical, check_semantics,
+    classify_terminals, finalize, lex, parse, parse_graph, resolve,
 };
 
 /// Host-compiler optimization arguments for every Whitefoot executable.
@@ -686,17 +686,14 @@ pub fn render_module_interface(
     let inputs = &with_library_records(graph, inputs);
     let target = registered_module(graph, module)?;
     let selected = module_check_inputs(graph, inputs, target, true);
-    with_checked_program(&selected, Some(graph.modules()), limits, |checked, _| {
-        checked
-            ._resolved
-            .render_interface(target)
-            .map_err(|failure| {
-                CompilationFailure::new(
-                    CompilationStage::Resolution,
-                    CompilationFailureKind::Compiler,
-                    failure,
-                )
-            })
+    with_checked_program(&selected, Some(graph.modules()), limits, |_, resolved| {
+        resolved.render_interface(target).map_err(|failure| {
+            CompilationFailure::new(
+                CompilationStage::Resolution,
+                CompilationFailureKind::Compiler,
+                failure,
+            )
+        })
     })
 }
 
@@ -1277,13 +1274,13 @@ impl<'input> ModuleCheck<'input> {
             Some(graph.modules()),
             limits,
             cache,
-            |checked, _| {
+            |_, resolved| {
                 Ok(std::iter::once(self.target)
                     .chain(graph.dependency_closure(self.target))
                     .map(|module| Judged {
                         module,
-                        pending: pending_declarations(&checked, module),
-                        read: reads::read_declarations(&checked, module),
+                        pending: pending_declarations(resolved, module),
+                        read: reads::read_declarations(resolved, module),
                     })
                     .collect())
             },
@@ -1783,7 +1780,7 @@ pub fn entry_verdict(
                     Some(graph.modules()),
                     limits,
                     cache,
-                    |checked, bundle| admit_entry(&checked, bundle, &selection),
+                    |checked, resolved| admit_entry(&checked, resolved, &selection),
                 )
                 .map(|()| Vec::new()),
                 &selected,
@@ -1852,13 +1849,12 @@ fn composition_acceptance(
 
 /// [MOD-8] the interface function declarations of `module` that no
 /// implementation record of it defines, in source order.
-fn pending_declarations(checked: &CheckedProgram, module: crate::ModuleId) -> Vec<String> {
-    checked
-        ._resolved
+fn pending_declarations(resolved: &ResolvedSyntaxUnit, module: crate::ModuleId) -> Vec<String> {
+    resolved
         .interface_functions()
         .iter()
         .filter(|function| function.definition().is_none())
-        .filter_map(|function| checked._resolved.declaration(function.declaration()))
+        .filter_map(|function| resolved.declaration(function.declaration()))
         .filter(|declaration| declaration.module() == Some(module))
         .map(|declaration| declaration.spelling().to_owned())
         .collect()
@@ -2134,7 +2130,7 @@ pub fn check_module_entry(
         &selected,
         Some(graph.modules()),
         limits,
-        |checked, bundle| admit_entry(&checked, bundle, &selection),
+        |checked, resolved| admit_entry(&checked, resolved, &selection),
     )
 }
 
@@ -2321,15 +2317,15 @@ fn compile_selected(
     selection: &Selection<'_>,
     receipts: Option<&BuildCache>,
 ) -> Result<Reported, CompilationFailure> {
-    with_checked_program_using(inputs, modules, limits, receipts, |checked, bundle| {
+    with_checked_program_using(inputs, modules, limits, receipts, |checked, resolved| {
         if modules.is_some() {
-            admit_entry(&checked, bundle, selection)?;
+            admit_entry(&checked, resolved, selection)?;
         }
         lower_selected(
             inputs,
             (modules, limits, overlap, receipts),
             selection,
-            bundle,
+            resolved,
             checked,
         )
     })
@@ -2339,12 +2335,13 @@ fn compile_selected(
 /// STOR-8]; the checked program makes the judgment.
 fn admit_entry(
     checked: &CheckedProgram,
-    bundle: &SourceBundle,
+    resolved: &ResolvedSyntaxUnit,
     selection: &Selection<'_>,
 ) -> Result<(), CompilationFailure> {
-    let Err(rejection) = checked.admit_entry(selection.request()) else {
+    let Err(rejection) = checked.admit_entry(resolved, selection.request()) else {
         return Ok(());
     };
+    let bundle = resolved.syntax().classified_bundle().source_bundle();
     let rule = rejection.rule();
     // A named entry's rejection is located at its `entry_decl` in the graph
     // record; an unnamed entry is written only in the build's selection.
@@ -2557,8 +2554,8 @@ fn canonical_syntax(
 }
 
 /// Runs the one source front end and hands its checked program, with the
-/// bundle its locations name, to one projection. Both `check` and `compile`
-/// enter here; neither reconstructs a source verdict.
+/// resolved unit it was checked over, to one projection. Both `check` and
+/// `compile` enter here; neither reconstructs a source verdict.
 fn with_checked_program<T, F>(
     inputs: &[SourceInput<'_>],
     modules: Option<&[crate::ModuleRecord]>,
@@ -2566,7 +2563,7 @@ fn with_checked_program<T, F>(
     continuation: F,
 ) -> Result<T, CompilationFailure>
 where
-    F: FnOnce(CheckedProgram, &SourceBundle) -> Result<T, CompilationFailure>,
+    F: FnOnce(CheckedProgram, &ResolvedSyntaxUnit) -> Result<T, CompilationFailure>,
 {
     with_checked_program_using(inputs, modules, limits, None, continuation)
 }
@@ -2583,7 +2580,7 @@ fn with_checked_program_using<T, F>(
     continuation: F,
 ) -> Result<T, CompilationFailure>
 where
-    F: FnOnce(CheckedProgram, &SourceBundle) -> Result<T, CompilationFailure>,
+    F: FnOnce(CheckedProgram, &ResolvedSyntaxUnit) -> Result<T, CompilationFailure>,
 {
     let bundle = match modules {
         Some(modules) => {
@@ -2614,8 +2611,8 @@ where
         }
     };
     let outcome = match receipts {
-        Some(receipts) => crate::semantic::check_semantics_with_receipts(resolved, receipts),
-        None => check_semantics(resolved),
+        Some(receipts) => crate::semantic::check_semantics_with_receipts(&resolved, receipts),
+        None => check_semantics(&resolved),
     };
     let checked = match outcome {
         SemanticOutcome::Complete(complete) => *complete,
@@ -2667,7 +2664,7 @@ where
             ));
         }
     };
-    continuation(checked, &bundle)
+    continuation(checked, &resolved)
 }
 
 fn lower_selected(
@@ -2679,10 +2676,11 @@ fn lower_selected(
         Option<&BuildCache>,
     ),
     selection: &Selection<'_>,
-    bundle: &SourceBundle,
+    resolved: &ResolvedSyntaxUnit,
     checked: CheckedProgram,
 ) -> Result<Reported, CompilationFailure> {
-    let entry = checked.selected_function(selection.module, selection.name);
+    let bundle = resolved.syntax().classified_bundle().source_bundle();
+    let entry = checked.selected_function(resolved, selection.module, selection.name);
     let selected = entry
         .map_or(selection.name, |function| function.symbol.as_str())
         .to_owned();
@@ -2693,7 +2691,7 @@ fn lower_selected(
     let mut caller_failure = None;
     if !launcher_contract_ready
         && let Some(function) = entry
-        && let Some((name, source)) = launcher::caller_source(&checked, function)
+        && let Some((name, source)) = launcher::caller_source(resolved, function)
     {
         let bundle_name = (0_u64..)
             .map(|index| format!("executable-caller-{index}.wf"))

@@ -297,7 +297,7 @@ mod tests {
         let ResolutionOutcome::Complete(resolved) = resolved else {
             panic!("ordinary prelude resolution: {resolved:?}");
         };
-        let checked = check_semantics(resolved);
+        let checked = check_semantics(&resolved);
         let SemanticOutcome::Complete(checked) = checked else {
             panic!("ordinary declaration and owned transfer: {checked:?}");
         };

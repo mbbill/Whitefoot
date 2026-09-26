@@ -22,7 +22,7 @@ mod tree;
 #[cfg(test)]
 mod tests;
 
-use crate::{NodePath, ResolutionIssue, ResolvedSyntaxUnit, SyntaxCoordinate};
+use crate::{NodePath, ResolutionIssue, SyntaxCoordinate};
 
 pub use check::check_semantics;
 #[cfg(test)]
@@ -1296,9 +1296,12 @@ pub enum SemanticCompilerFailure {
 }
 
 /// Whole-unit semantic success and its only lowering authority.
+///
+/// It holds what checking concluded and no syntax: a stage that reads
+/// resolution records, such as an entry's composition judgment, reads them
+/// from the resolved unit the check was made over.
 #[derive(Debug)]
 pub struct CheckedProgram {
-    pub(crate) _resolved: ResolvedSyntaxUnit,
     pub(crate) data: CheckedProgramData,
 }
 

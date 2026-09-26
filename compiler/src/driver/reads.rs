@@ -21,7 +21,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{CompilerLimits, canonical_syntax};
-use crate::semantic::CheckedProgram;
 use crate::source::SourceBundle;
 use crate::syntax::terminal::TerminalPredicate;
 use crate::syntax::{FinalizedExtent, NodeId};
@@ -211,10 +210,9 @@ fn record_reading(bytes: &[u8], limits: CompilerLimits) -> Option<Reading> {
 /// followed by the keys resolution minted for them. PRE-1 declarations are
 /// the compiler's own and belong to no module.
 pub(super) fn read_declarations(
-    checked: &CheckedProgram,
+    resolved: &crate::ResolvedSyntaxUnit,
     target: crate::ModuleId,
 ) -> Option<BTreeSet<(crate::ModuleId, ItemName)>> {
-    let resolved = &checked._resolved;
     let bundle = resolved.syntax().classified_bundle().source_bundle();
     let module_of = |key: &crate::ItemKey| match key {
         crate::ItemKey::Declared {

@@ -210,6 +210,24 @@ fn with_semantics_inputs<ResultValue>(
     inputs: &[SourceInput<'_>],
     run: impl FnOnce(SemanticOutcome) -> ResultValue,
 ) -> ResultValue {
+    with_resolved_semantics_inputs(inputs, |_, outcome| run(outcome))
+}
+
+/// [`with_semantics`] that also lends the resolved unit the program was
+/// checked over, for a test that reads resolution records beside the checked
+/// program.
+fn with_resolved_semantics<ResultValue>(
+    source: &[u8],
+    run: impl FnOnce(&crate::ResolvedSyntaxUnit, SemanticOutcome) -> ResultValue,
+) -> ResultValue {
+    let inputs = [SourceInput::new("test.wf", source)];
+    with_resolved_semantics_inputs(&inputs, run)
+}
+
+fn with_resolved_semantics_inputs<ResultValue>(
+    inputs: &[SourceInput<'_>],
+    run: impl FnOnce(&crate::ResolvedSyntaxUnit, SemanticOutcome) -> ResultValue,
+) -> ResultValue {
     let Ok(bundle) = SourceBundle::with_prelude(inputs, SOURCE_LIMITS) else {
         panic!("semantic test bundle must be valid");
     };
@@ -239,8 +257,9 @@ fn with_semantics_inputs<ResultValue>(
     let ResolutionOutcome::Complete(resolved) = outcome else {
         panic!("semantic test source must resolve: {outcome:?}");
     };
-    let checked = crate::native_test_support::timed("semantic-check", || check_semantics(resolved));
-    crate::native_test_support::timed("semantic-test-assertions", || run(checked))
+    let checked =
+        crate::native_test_support::timed("semantic-check", || check_semantics(&resolved));
+    crate::native_test_support::timed("semantic-test-assertions", || run(&resolved, checked))
 }
 
 /// [`with_semantics`] through the test-only dark checker, which retains every
@@ -279,7 +298,7 @@ fn with_semantics_dark<ResultValue>(
     let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
         panic!("semantic test source must resolve");
     };
-    run(super::check::check_semantics_dark(resolved))
+    run(super::check::check_semantics_dark(&resolved))
 }
 
 fn assert_rule(source: &[u8], rule: SemanticRule, kind: SemanticIssueKind) {

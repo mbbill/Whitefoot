@@ -650,7 +650,7 @@ fn with_checked<ResultValue>(
     let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
         panic!("lowering test source must resolve");
     };
-    let outcome = check_semantics(resolved);
+    let outcome = check_semantics(&resolved);
     let SemanticOutcome::Complete(checked) = outcome else {
         panic!("lowering test source must check: {outcome:?}");
     };
