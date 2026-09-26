@@ -340,7 +340,11 @@ entry state's `r.len - 1`, and nothing used that either.
   v0.73 checker accepts these too, and the review's probes read freed
   memory, corrupted the heap and segfaulted. The question now compares
   storage depth: a range step followed by another step descends no level of
-  its own, and a run a path ends at lies half a level below its base.
+  its own, and a run a path ends at lies half a level below its base. One
+  program v0.73 accepted is now refused: a callee declared `writes(part)`,
+  called with `part: &v[0_u64..2_u64]`, writes a place above `v[1_u64]`,
+  so a reference `&v[1_u64]` dies at the call, as `&deref(part)[1_u64]`
+  already did in v0.73 (`ref2-neg-element-reference-after-run-write`).
 
 ### Soundness of the families
 
@@ -404,6 +408,7 @@ stay accepted on both compilers.
 | `ref2-neg-element-reference-after-range-frame-pop` | exit 0 | REF-2 |
 | `ref2-neg-element-reference-after-range-row-pop` | exit 0 | REF-2 |
 | `ref2-neg-element-reference-after-range-frame-write` | exit 0 | REF-2 |
+| `ref2-neg-element-reference-after-run-write` | exit 0 | REF-2 |
 
 The criterion held. The `ref2-neg` rows are programs the v0.73 checker
 wrongly accepted; `ref2-pos-reference-survives-user-push` shows a user call
