@@ -1096,6 +1096,49 @@ rarely insert at the same place.
   sources. Reopen when the next parallel-lowering experiment has to change the
   split.
 
+- **A handed-out call may block on a peer while a join waits beneath it.**
+  `sched/core.c` assumes that compute callbacks never block on I/O, and
+  `wf__par_wait` lets a joining lane run other published work on its own
+  stack. Nothing in permission or lowering keeps a call that reaches a
+  blocking host operation out of a hand-out. Under `--par --par-ledger`,
+  two adjacent calls of a helper that wraps `receive_next` on two different
+  connections are permitted and chained, and the emitted `pair` publishes
+  one of them through `wf__par_publish`. A direct pair of `receive_next`
+  calls is not handed out, but only because its addressed result ends the
+  group. A lane that runs such a task while it helps a join therefore blocks
+  on the network with that join's continuation stranded below it. Take a
+  run of three independent statements: A forks compute and then sends on one
+  connection, B receives on another, C is anything. If a lane running A helps
+  with B, and the peer answers B only after A's send, the parallel program
+  hangs where the sequential one completes. This hang is reasoned from the
+  scheduler code; no run has shown it. Blocking file reads have the same
+  stacking but end on their own; their cost is lost compute.
+
+  The fix belongs to the I/O model under discussion: no handed-out or helping
+  task may wait, and a blocking call must be recognizable from its signature.
+  Until then, the minimal repair is to treat a call that reaches a blocking
+  host operation as not offerable. Validate with a harness test that runs the
+  three-statement shape against a peer that answers only after the send, at
+  `WF_WORKERS` 2 and 4.
+
+- **Overlap can produce host effects that no sequential execution produces.**
+  [PAR-2] says that when an iteration does not reach its continuation, the
+  overlapped execution "produces none" of the later observables. Yet a
+  counted loop whose body passes `&deref(all)[i..after]` to a helper that
+  calls `send_once` is permitted and split under `--par`. If iteration 0's
+  send never completes, a later iteration's send still reaches its peer.
+  [PAR-1] promises only that state places are equal, so a first statement
+  that never finishes, next to a second that sends, shows the same gap.
+  File and stream output avoid it only because every such call writes the one
+  `HandleFactory`.
+
+  The language has not said whether source order between two proved-independent
+  statements orders their host effects. Either answer needs a ruling. If order
+  holds, overlap may not start a later member's host effect before the earlier
+  member completes. If order does not hold, [PAR-2]'s clause is restated for
+  state places, and the host traces of independent statements may interleave.
+  Reopen with the concurrent I/O design.
+
 ## Platforms and host interfaces
 
 - **Upstream LLVM on Darwin does not yet support the selected stack-probe
