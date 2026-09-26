@@ -1286,6 +1286,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         }
         self.install_call_requirements(&mut phase_a)?;
+        self.form_obligation_records(&mut phase_a)?;
         let callees = self.entailment_callees()?;
         self.validate_generic_body_entailment(
             &mut phase_a,

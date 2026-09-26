@@ -2026,7 +2026,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     // Separation for a call, exchange or reference preservation
                     // is one occurrence, without a conjunct of its own.
                     ObligationFamily::CallSeparation(_)
-                    | ObligationFamily::ExchangeSeparation
+                    | ObligationFamily::ExchangeSeparation(_)
                     | ObligationFamily::ReferencePreservation(_) => {
                         assert_eq!(outcome.conjunct, 0)
                     }

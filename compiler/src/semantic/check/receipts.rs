@@ -435,7 +435,10 @@ impl ItemSpellings {
 /// The rendering of everything one function's analysis reads of the
 /// function itself [ENT-5]. The [EFF-3] allocation bit is left out: the
 /// analysis never reads it, and it can differ between a module's own check
-/// and a composition that sees an allocating callee's body.
+/// and a composition that sees an allocating callee's body. The obligation
+/// records are left out too: they are formed from the requirement places,
+/// body, separations and postconditions rendered here, and a receipt stands
+/// for an analysis that discharged every one of them.
 fn analyzed_rendering(function: &CheckedFunction) -> String {
     let CheckedFunction {
         formal_hypothesis,
@@ -459,6 +462,7 @@ fn analyzed_rendering(function: &CheckedFunction) -> String {
         allocates: _,
         call_separations,
         permission_separation_queries,
+        obligations: _,
         entailment: _,
     } = function;
     format!(
