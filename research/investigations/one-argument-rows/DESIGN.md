@@ -354,9 +354,10 @@ entry state's `r.len - 1`, and nothing used that either.
   below the index and below the range are relative to different frames, so
   only a separation proved at this pair separates their descendants.
 - Containing paths. Two containing paths that differ only in index steps
-  select one storage or two, since an index is an absolute coordinate:
-  where their offsets are equal the paths name one storage, where the
-  orderings apply, and where they differ, different storages. Containing
+  select one storage or two: their other steps are identical, so each pair
+  of index steps selects elements of one frame, and where their offsets are
+  equal the paths name one storage, where the orderings apply, and where
+  they differ, different storages. Containing
   paths that differ in a range step are frames every later step is relative
   to, so they are not compared. The checker already separated the first
   kind, and v0.73 accepted two ranges formed at a call below unproved row
