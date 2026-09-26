@@ -1962,3 +1962,14 @@ condition under which it is taken up.
   reference's index binding does. Validate with those two programs refused
   and a parameter written only after its last access accepted. Found by the
   completion review of PR #145.
+- **A goal over an index no spelling names offers routes that cannot
+  establish it.** After `let wr = &rows[k];` and `set k = 1_u64;`, a call's
+  requirement through `wr` reads `rows[?].len`, and FN-8's repair offers an
+  `invariant` whose `use` steps name the facts implying it, or a guard whose
+  condition establishes it. No fact or condition names that row, so
+  neither can succeed, while binding the index first, `let k0 = k;` and
+  `let wr = &rows[k0];`, does. An index a loop-rebound holder carries, also
+  rendered `?`, gets the same two routes, and there forming the reference
+  after the rebinding is what works. Select the route from what the `?`
+  stands for, and pin each pair with a repaired source that is accepted.
+  Found while fixing the completion review of PR #145.
