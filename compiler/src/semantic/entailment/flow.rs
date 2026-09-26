@@ -9889,12 +9889,16 @@ impl Analyzer<'_, '_> {
                 Some(self.terms.intern(TermKind::Constant(i128::from(value))))
             }
             CapturedTerm::Const(declaration) => Some(self.const_parameter_term(declaration)),
-            CapturedTerm::Binding(_) if matches!(value.capture, CaptureId::Source(_)) => {
+            // A superseded binding's capture still names the value its
+            // formation read, which is the immutable term the capture minted.
+            CapturedTerm::Binding(_) | CapturedTerm::Superseded(_)
+                if matches!(value.capture, CaptureId::Source(_)) =>
+            {
                 self.terms.interned(&TermKind::IndexCapture {
                     capture: value.capture,
                 })
             }
-            CapturedTerm::Binding(_) | CapturedTerm::Opaque => None,
+            CapturedTerm::Binding(_) | CapturedTerm::Superseded(_) | CapturedTerm::Opaque => None,
         }
     }
 
@@ -16574,7 +16578,9 @@ impl Analyzer<'_, '_> {
     fn render_offset(&self, offset: CapturedValue) -> String {
         match offset.term {
             CapturedTerm::Literal(value) => value.to_string(),
-            CapturedTerm::Binding(binding) => self.binding_name(binding),
+            CapturedTerm::Binding(binding) | CapturedTerm::Superseded(binding) => {
+                self.binding_name(binding)
+            }
             CapturedTerm::Const(declaration) => self.declaration_name(declaration),
             CapturedTerm::Opaque => "?".to_owned(),
         }

@@ -642,6 +642,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         event: &InvalidationEvent,
         site: Option<&crate::NodePath>,
     ) -> Result<(), CheckStop> {
+        // [REF-1] a reference keeps the index value its formation read, so a
+        // write of that binding leaves the reference valid but ends the
+        // binding's spelling as a name for its index.
+        if written.path.is_empty()
+            && let PlaceRoot::Binding(binding) = written.root
+        {
+            for reference in bindings
+                .values_mut()
+                .filter_map(|local| local.reference.as_mut())
+            {
+                for path in &mut reference.paths {
+                    path.supersede_binding(binding);
+                }
+            }
+        }
         let include_equal = matches!(event, InvalidationEvent::PrefixMoved);
         let primitive_write = !include_equal
             && !matches!(

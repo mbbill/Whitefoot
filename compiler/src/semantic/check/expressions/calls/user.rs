@@ -1195,6 +1195,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         if expected_mode != CheckedMode::Own {
             if let Some(place) = passed_place.filter(|place| !place.has_descendant()) {
+                // [REF-1, ENT-2] an index whose binding was written after the
+                // reference formed, or that a loop evaluates again, names no
+                // term of the referent, so the requirement is instantiated
+                // over the reference itself, as a read through it is: a guard
+                // written through the reference proves it, and no fact about
+                // the binding's new value does.
+                if let CheckedExpression::Binding { binding, .. } = &argument.expression
+                    && place.has_unspelled_index()
+                {
+                    return Ok(GoalExpression::Datum(GoalDatum::Place {
+                        root: *binding,
+                        projections: Vec::new(),
+                        ty: expected_type,
+                    }));
+                }
                 return self.goal_referent_image(place, expected_type, atom);
             }
             // FN-1's candidate protects every mutable origin a returned

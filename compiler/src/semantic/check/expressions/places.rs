@@ -1171,7 +1171,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(match offset.term {
             CapturedTerm::Literal(value) => format!("{value}_u64"),
             CapturedTerm::Const(declaration) => self.declaration_spelling(declaration)?,
-            CapturedTerm::Binding(binding) => {
+            // A superseded index is spelled as its formation wrote it.
+            CapturedTerm::Binding(binding) | CapturedTerm::Superseded(binding) => {
                 match bindings.values().find(|local| local.binding == binding) {
                     Some(local) => self.declaration_spelling(local.declaration)?,
                     None => "?".to_owned(),

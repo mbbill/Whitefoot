@@ -1982,17 +1982,3 @@ condition under which it is taken up.
   containing paths; validate with those three calls, and with containing
   paths that differ in a range step, which must stay refused. Found by the
   completion review of PR #141.
-- **A requirement through a reference is checked against its offset's
-  current value.** After `let wr = &rows[k];` and `set k = 1_u64;`, a
-  requirement a call states through `wr`, such as `requires i <
-  deref(x).len` for `get(x: wr, i: 2_u64)`, is instantiated as
-  `2 < rows[k].len` with the new `k`, so facts about `rows[1_u64]` discharge
-  it while `wr` still names `rows[0_u64]`. A program that proves
-  `3 <= rows[k].len` after the assignment reads index 2 of a one-element
-  row and segfaults; the v0.73 and v0.74 checkers both accept it. The
-  requirement must read the reference's target as captured at formation
-  [REF-1], as a range's captured endpoints are [OWN-7]. Validate with that
-  program refused, the same program with `wr` formed after the assignment
-  accepted, and a reference whose offset is never reassigned unchanged.
-  Found by the completion review of PR #141; the fix is planned as its own
-  PR.
