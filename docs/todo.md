@@ -1019,22 +1019,18 @@ rarely insert at the same place.
   comparing published bytes at several worker counts with the sequential
   lowering.
 
-- **PAR-1 footprints do not read a reference holder a statement passes.** An
-  operand read of a reference binding resolves to the path the reference names,
-  while the `let` that defines the holder writes the holder binding itself. So
-  the holder's `let` and a later statement passing the holder show no
-  footprint conflict, although PAR-1 makes a `let`'s defined binding a write
-  path that the other statement's argument reads must avoid. A let-bound
-  recursive quicksort therefore forms the run `let larger = &deref(v)[after..n];`,
-  `quicksort(v: smaller);`, `quicksort(v: larger);`. The inline spelling's
-  second call reads `after` itself, so `let after` cannot join that run.
-  Lowering runs a non-call member before the call group after it, so no
-  emitted program is known to be affected. Whether any alias or scheduling
-  consumer reads the independence of non-call run members is unverified.
-  Record the holder binding as an operand read beside its referent, and
-  validate that the let-bound and inline spellings then form corresponding
-  runs while every verdict between two calls is unchanged. Reopen when a
-  lowering or metadata consumer starts using non-call run members.
+- **A rebound reference parameter's holder read overlaps every access
+  through it.** PAR-1 reads a reference variable's own binding at each use,
+  which the `let` that forms it or a `set` that rebinds it writes. A
+  reference parameter's binding also stands for the place it names, so once
+  a body rebinds the parameter (`set values = &deref(values)[0_u64..8_u64];`),
+  that holder read overlaps every write through `values` and denies pairs
+  PAR-1 permits, such as a call writing one range of `values` beside a `let`
+  that forms another. Giving the holder a place root of its own, which
+  overlaps only itself, would separate the two. Validate with that pair
+  permitted again and the rebinding still ordered against the uses after it.
+  Found in the review of the holder-read fix; reopen when a program rebinds a
+  reference parameter on a parallel path.
 
 - **Parallel actualization is decided during translation.** A counted-loop
   split is chosen while its body is being lowered

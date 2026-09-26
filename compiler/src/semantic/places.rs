@@ -1190,6 +1190,24 @@ impl PlaceMap {
         })
     }
 
+    /// The binding a use of a reference variable reads besides the path it
+    /// names: the variable holds what its formation captured, the range
+    /// endpoints and index values among them, and the `let` that forms it
+    /// or a `set` that rebinds it writes it [REF-1, PAR-1].
+    ///
+    /// A reference parameter that is never rebound names exactly the place
+    /// its own binding stands for, so it has no separate holder, and neither
+    /// has an owned binding. A rebound parameter's binding is both its holder
+    /// and the entry place it names, so reading it overlaps every access
+    /// through the parameter, which denies more than PAR-1 asks. A reference
+    /// whose inventory is unknown is read as well, failing closed.
+    pub(crate) fn reference_holder(&self, binding: BindingId) -> Option<ResolvedPlace> {
+        let summary = self.summary(binding)?;
+        let holder = ResolvedPlace::binding(binding);
+        (summary.reference && summary.reference_paths.as_slice() != std::slice::from_ref(&holder))
+            .then_some(holder)
+    }
+
     /// Resolves a written holder and suffix through its complete origin inventory.
     ///
     /// Stored paths are already resolved. Looking their roots up again would
