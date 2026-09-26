@@ -235,18 +235,34 @@ mod tests {
         assert_eq!(unrecorded, [path(&[3])]);
     }
 
-    /// Two judgments of one identity cannot both answer its one record, so
-    /// the displaced one is reported rather than dropped.
+    /// Records and judgments of one identity pair in the order they were
+    /// made: two records take the first two judgments, a third judgment is
+    /// reported rather than dropped, and a record left without one stays
+    /// unanswered.
     #[test]
-    fn a_repeated_judgment_answers_no_second_record() {
-        let function = function(vec![subscript(&[1])], true);
+    fn repeated_judgments_answer_repeated_records_in_order() {
+        let function = function(vec![subscript(&[1]), subscript(&[1])], true);
         let entailment = FunctionEntailment {
-            obligations: vec![bounds(&[1], false), bounds(&[1], true)],
+            obligations: vec![bounds(&[1], false), bounds(&[1], true), bounds(&[1], true)],
             ..FunctionEntailment::default()
         };
         let (answers, unrecorded) = answer_records(&function, &entailment);
-        assert_eq!(answers, [Some(RecordAnswer::Obligation(1))]);
+        assert_eq!(
+            answers,
+            [
+                Some(RecordAnswer::Obligation(0)),
+                Some(RecordAnswer::Obligation(1))
+            ]
+        );
         assert_eq!(unrecorded, [path(&[1])]);
+        let fewer = FunctionEntailment {
+            obligations: vec![bounds(&[1], true)],
+            ..FunctionEntailment::default()
+        };
+        assert_eq!(
+            answer_records(&function, &fewer).0,
+            [Some(RecordAnswer::Obligation(0)), None]
+        );
     }
 
     /// [FN-9] a relation of a body whose requirements contradict holds with

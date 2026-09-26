@@ -348,8 +348,13 @@ and applied (`design/log.md`, 2026-09-25).
    and it is independent of the engine's walk and reachability. The records
    carry the rule, fixed once; OP-14 comes from the checker's operand-row
    table, not the callee spelling. The engine answers each record by its
-   site, family and conjunct (`answer_records`); no key repeated on the
-   corpus. Acceptance (`semantic/check/acceptance.rs`) reports the first
+   site, family and conjunct (`answer_records`), a separation also by its
+   query, and records and judgments sharing one identity pair in the order
+   they were made, so the contract rests on their counts agreeing. The
+   completion review found two separations at one call sharing an identity
+   before the query was part of it: a valid program failed as a contract
+   disagreement, and a unit test now pins it. Acceptance
+   (`semantic/check/acceptance.rs`) reports the first
    undischarged answered record in the former order, and treats unanswered
    records alone, or a judgment that answers none, as a compiler failure,
    since they mean the checker and the engine disagree and are no source
@@ -380,7 +385,7 @@ and applied (`design/log.md`, 2026-09-25).
      and 40 became free functions.
    - **Modules.** The methods moved into the component modules listed above,
      with `sources`, `results` and `conversions` kept. The types and the
-     entry points stay in `flow.rs`, now 2,251 lines; no module exceeds
+     entry points stay in `flow.rs`, now 2,263 lines; no module exceeds
      3,200.
 
    The corpus and the module graphs emit identical LLVM, diagnostics and

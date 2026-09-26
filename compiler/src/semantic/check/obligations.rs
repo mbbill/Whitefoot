@@ -84,23 +84,22 @@ fn obligation_records(
     // [OWN-7] the separations the checker's comparison could not decide by
     // syntax, each submitted where its call, set or reference use stands.
     for (query, separation) in function.call_separations.iter().enumerate() {
+        let query = u32::try_from(query).expect("separation queries exceed u32");
         let (rule, site, family) = match &separation.reference_use {
             Some(use_site) => (
                 SemanticRule::Ref2,
                 use_site.site.clone(),
-                ObligationFamily::ReferencePreservation(
-                    u32::try_from(query).expect("reference-preservation queries exceed u32"),
-                ),
+                ObligationFamily::ReferencePreservation(query),
             ),
             None if separation.exchange => (
                 SemanticRule::Op11,
                 separation.site.clone(),
-                ObligationFamily::ExchangeSeparation,
+                ObligationFamily::ExchangeSeparation(query),
             ),
             None => (
                 SemanticRule::Eff5,
                 separation.site.clone(),
-                ObligationFamily::CallSeparation,
+                ObligationFamily::CallSeparation(query),
             ),
         };
         records.push(

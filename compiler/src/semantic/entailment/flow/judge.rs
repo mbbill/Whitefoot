@@ -369,14 +369,15 @@ impl Judging<'_, '_, '_> {
         self.output.obligations.push(ObligationOutcome {
             node_path: separation.reference_use.as_ref()
                 .map_or_else(|| separation.site.clone(), |use_site| use_site.site.clone()),
-            family: if separation.reference_use.is_some() {
-                ObligationFamily::ReferencePreservation(
-                    u32::try_from(query).expect("reference-preservation queries exceed u32"),
-                )
-            } else if separation.exchange {
-                ObligationFamily::ExchangeSeparation
-            } else {
-                ObligationFamily::CallSeparation
+            family: {
+                let query = u32::try_from(query).expect("separation queries exceed u32");
+                if separation.reference_use.is_some() {
+                    ObligationFamily::ReferencePreservation(query)
+                } else if separation.exchange {
+                    ObligationFamily::ExchangeSeparation(query)
+                } else {
+                    ObligationFamily::CallSeparation(query)
+                }
             },
             conjunct: 0,
             canonical_goal: None,
