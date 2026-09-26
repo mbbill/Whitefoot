@@ -89,17 +89,14 @@ impl SeparationOracle for EntryPairSeparations<'_> {
         })
     }
 
-    fn index_is_not_last(&self, window: &ResolvedPlace, index: CapturedValue) -> bool {
-        UnprovedSeparations.index_is_not_last(window, index)
-    }
-
     fn index_outside_range(&self, index: CapturedValue, range: CapturedRange) -> bool {
         UnprovedSeparations.index_outside_range(index, range)
     }
 
-    /// A range of an actual's own path was formed at the call and discharged
-    /// its [REF-4] bound there, so it lies within the length of the call's
-    /// entry state, as an index formed there is live; a range a row supplies
+    /// A range of an actual's own path was formed at the call, discharging
+    /// its [REF-4] bound there, or is named by a reference valid only while
+    /// that bound holds [OP-10], so it lies within the length of the call's
+    /// entry state, as an index of that path is live; a range a row supplies
     /// takes its endpoints from other arguments and is bounded by nothing
     /// until the entailment fragment proves it [EFF-5, WIN-2].
     fn range_within_length(&self, window: &ResolvedPlace, range: CapturedRange) -> bool {
@@ -107,10 +104,6 @@ impl SeparationOracle for EntryPairSeparations<'_> {
         self.entries.iter().all(|entry| {
             depth < entry.formed || entry.place.path.get(depth) != Some(&PlaceStep::Range(range))
         })
-    }
-
-    fn range_before_last(&self, window: &ResolvedPlace, range: CapturedRange) -> bool {
-        UnprovedSeparations.range_before_last(window, range)
     }
 
     fn window_length_is_shared(&self, window: &ResolvedPlace) -> bool {
@@ -410,7 +403,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             self.check_atomic_update_row(node, &actual_paths, &substituted, bindings)?;
         self.check_call_pairwise_disjointness(node, signature, &substituted, bindings)?;
         self.invalidate_call_references(node, &substituted, atomic_target.as_ref(), bindings)?;
-        Self::invalidate_window_operation_references(signature, &substituted, bindings);
+        self.invalidate_window_operation_references(signature, &substituted, bindings)?;
         self.project_call_effects(node, function, &substituted, bindings, &mut effects)?;
         let result = signature.result;
         let result_mode = signature.result_mode;
@@ -879,8 +872,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// still separate. Index suffixes remain candidates; a divergence with a
     /// range step is the final candidate because its coordinate frames then
     /// differ, whether against another range or against an index, and so is
-    /// a position beside one of a window's parts, which [WIN-2] separates by
-    /// a bound on that window's length, together with the window it reads.
+    /// a position beside a window's `next` or `free`, which [WIN-2] separates
+    /// by a bound on that window's length, together with the window it reads.
+    /// Beside `last` or `filled` a position overlaps whatever its value.
     pub(in crate::semantic::check) fn separable_by_position(
         left: &ResolvedPlace,
         right: &ResolvedPlace,
@@ -920,21 +914,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 (PlaceStep::Index(_) | PlaceStep::Range(_), PlaceStep::Part(part))
                 | (PlaceStep::Part(part), PlaceStep::Index(_) | PlaceStep::Range(_))
-                    if *part != WindowPart::Filled =>
+                    if matches!(part, WindowPart::Next | WindowPart::Free) =>
                 {
-                    let position = match (steps, part) {
-                        (
-                            (PlaceStep::Index(index), _) | (_, PlaceStep::Index(index)),
-                            WindowPart::Last,
-                        ) => CheckedCallSeparationPositions::NotLast(*index),
-                        ((PlaceStep::Index(index), _) | (_, PlaceStep::Index(index)), _) => {
+                    let position = match steps {
+                        (PlaceStep::Index(index), _) | (_, PlaceStep::Index(index)) => {
                             CheckedCallSeparationPositions::Live(*index)
                         }
-                        (
-                            (PlaceStep::Range(range), _) | (_, PlaceStep::Range(range)),
-                            WindowPart::Last,
-                        ) => CheckedCallSeparationPositions::RangeBeforeLast(*range),
-                        ((PlaceStep::Range(range), _) | (_, PlaceStep::Range(range)), _) => {
+                        (PlaceStep::Range(range), _) | (_, PlaceStep::Range(range)) => {
                             CheckedCallSeparationPositions::RangeWithinLength(*range)
                         }
                         _ => break,
@@ -954,19 +940,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         (!candidates.is_empty()).then_some((candidates, window))
     }
 
-    /// [OP-10] the window operations that end the bound a reference into the
-    /// window was formed under.
+    /// [OP-10] the calls that end the bound a reference into a window was
+    /// formed under.
     ///
-    /// `place_back`'s `ensures` carries `i < r.len` across the call and
-    /// `insert_at` only changes a slot's occupant, so neither appears here.
-    /// The rest move a boundary down, move a run between two windows, shift
-    /// every logical index, or remake the block whole, and every reference
-    /// into the operand dies [REF-2, REF-4].
+    /// Of the window operations, `place_back`'s `ensures` carries
+    /// `i < r.len` across the call and `insert_at` only changes a slot's
+    /// occupant, so neither ends it; the rest move a boundary down, move a
+    /// run between two windows, shift every logical index, or remake the
+    /// block whole. Any other callee whose row writes a window's `last` or
+    /// `filled` may take elements back through it as `take_back` and
+    /// `remove_at` do, and no `ensures` is read here to show that it does
+    /// not, so its call ends the bound as well. Every reference into such a
+    /// window dies [REF-2, REF-4].
     fn invalidate_window_operation_references(
+        &self,
         signature: &FunctionSignature,
         entries: &[SubstitutedEntry],
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
-    ) {
+    ) -> Result<(), CheckStop> {
         const BOUND_ENDING_ROWS: [&str; 7] = [
             "take_back",
             "remove_at",
@@ -976,25 +967,34 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             "take_front",
             "grow",
         ];
-        if !BOUND_ENDING_ROWS.contains(&signature.name.as_str()) {
-            return;
-        }
+        let prelude = self.tree.is_prelude_node(signature.node)?;
+        let window_operation = prelude && BOUND_ENDING_ROWS.contains(&signature.name.as_str());
         for entry in entries {
             // A row entry names a part or a measure word of the window --
             // `writes(window.filled)`, `writes(window.len)` -- and the window
-            // whose bound the operation ends is the place below that step.
+            // whose bound the call ends is the place below that step.
             let cut = entry
                 .place
                 .path
                 .iter()
                 .position(|step| matches!(step, PlaceStep::Part(_) | PlaceStep::Measure(_)))
                 .unwrap_or(entry.place.path.len());
+            let takes_back = !prelude
+                && entry.write
+                && matches!(
+                    entry.place.path.get(cut),
+                    Some(PlaceStep::Part(WindowPart::Last | WindowPart::Filled))
+                );
+            if !window_operation && !takes_back {
+                continue;
+            }
             let window = ResolvedPlace {
                 root: entry.place.root,
                 path: entry.place.path[..cut].to_vec(),
             };
             Self::invalidate_window_references(bindings, &window);
         }
+        Ok(())
     }
 
     /// [STOR-8] a compilation unit carrying the no-heap declaration cannot

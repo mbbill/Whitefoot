@@ -956,3 +956,49 @@ fn main() -> status: std::process::ExitStatus pure {
 "#;
     assert_accepts(source);
 }
+
+/// [OWN-7, REF-2] a reference into an element outside a range a callee
+/// writes survives the call once the call's entry state proves the index at
+/// or after the range's end; a reference the entry state may put inside the
+/// range dies with the element the callee may replace.
+#[test]
+fn a_reference_outside_a_written_range_survives_the_write() {
+    let program = |bound: &str| {
+        format!(
+            "struct Pair {{
+  x: u64;
+  y: u64;
+}}
+
+fn zero(part: &[Pair], at: u64) -> result: unit writes(part) contract {{
+  requires at < deref(part).len;
+}} {{
+  let fresh = Pair(x: 0_u64, y: 0_u64);
+  set deref(part)[at] = fresh;
+  return unit;
+}}
+
+fn run(values: &Array<Pair, 8>, lo: u64, hi: u64, k: u64) -> result: u64 writes(values) contract {{
+  requires lo < hi;
+  requires {bound};
+  requires k < 8_u64;
+}} {{
+  let held = &deref(values)[k].x;
+  zero(part: &deref(values)[lo..hi], at: 0_u64);
+  let seen = deref(held);
+  return seen;
+}}
+
+fn main() -> status: std::process::ExitStatus pure {{
+  return std::process::exit_status(code: 0_u8);
+}}
+"
+        )
+    };
+    assert_accepts(program("hi <= k").as_bytes());
+    assert_rule_kind(
+        program("hi <= 8_u64").as_bytes(),
+        SemanticRule::Ref2,
+        |kind| matches!(kind, SemanticIssueKind::InvalidReferenceUse { .. }),
+    );
+}
