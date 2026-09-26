@@ -374,8 +374,9 @@ pub(crate) trait SeparationOracle {
     /// prove distinct.
     fn indices_distinct(&self, left: CapturedValue, right: CapturedValue) -> bool;
 
-    /// Two range steps under one identical containing path proved disjoint by
-    /// one of the four non-strict orderings `left.end <= right.start`,
+    /// Two range steps under containing paths that are identical step for
+    /// step or differ only in index steps, proved disjoint by one of the four
+    /// non-strict orderings `left.end <= right.start`,
     /// `right.end <= left.start`, `left.end <= left.start`, and
     /// `right.end <= right.start`; either empty-range ordering suffices
     /// because formation already proved start no greater than end [OWN-7].
@@ -396,8 +397,9 @@ pub(crate) trait SeparationOracle {
     /// where the call's entry state derives it [EFF-5].
     fn index_is_live(&self, window: &ResolvedPlace, index: CapturedValue) -> bool;
 
-    /// An index step and a range step under one identical containing path
-    /// proved disjoint by one of the three orderings `index < range.start`,
+    /// An index step and a range step under containing paths that are
+    /// identical step for step or differ only in index steps, proved disjoint
+    /// by one of the three orderings `index < range.start`,
     /// `range.end <= index` and `range.end <= range.start`: the index lies
     /// before the range, at or after its end, or the range is empty [OWN-7].
     fn index_outside_range(&self, index: CapturedValue, range: CapturedRange) -> bool;
