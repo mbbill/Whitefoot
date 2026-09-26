@@ -362,10 +362,13 @@ fn signaling_nan_payloads_cross_both_result_forms_unchanged() {
 /// A linked definition shares its declaration's callable ABI, so every
 /// linked implementation of a result returned in registers must return the
 /// same first-class value, one register per leaf, whatever its C body writes.
+/// The program names `std::process`, whose interface reaches `std::io`,
+/// `std::text` and `std::fs`, and aliases a `std::net` type, so every host
+/// module's declarations are checked.
 #[test]
 fn linked_definitions_return_their_declared_register_results() {
     with_ir(
-        b"fn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n",
+        b"alias SocketAddress = std::net::SocketAddress;\n\nfn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n",
         |program| {
             let module = crate::emit_llvm(program)
                 .expect("prelude declarations emit")
