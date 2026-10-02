@@ -1182,20 +1182,68 @@ pub enum IrOperation {
     /// bytes the range `key` names of the map `object` names, a handle or,
     /// with `held`, the address of a state this context holds; an absent key
     /// gets an entry holding `None`. Defines the address of the entry, an
-    /// `Option<V>`; one context holds one entry at a time.
+    /// `Option<V>`; one context holds one entry at a time. With `reads`, for
+    /// a statement that writes nothing through its binder, other such
+    /// statements hold the entry beside it, and an absent key's address is
+    /// a `None` no statement writes.
     SharedMapLock {
         nominal: IrNominalId,
         object: IrValueId,
         key: IrValueId,
         held: bool,
+        reads: bool,
     },
     /// [SHARE-3] gives up the entry `entry` names, the address
     /// [`Self::SharedMapLock`] defined: kept when it holds `Some`, removed
-    /// when it holds `None`. Defines `Unit`.
+    /// when it holds `None`, or, with `reads`, left as it was. Defines
+    /// `Unit`.
     SharedMapUnlock {
         object: IrValueId,
         entry: IrValueId,
         held: bool,
+        reads: bool,
+    },
+    /// [SHARE-3] begins collecting the keys a statement holding the state of
+    /// the map `object` names will reach, for a statement whose keys are
+    /// computed before its block runs. Defines `Unit`.
+    SharedMapKeys {
+        object: IrValueId,
+    },
+    /// One key such a statement will reach, the bytes the range `key`
+    /// names, which stay as they are until the release. Defines `Unit`.
+    SharedMapKey {
+        object: IrValueId,
+        key: IrValueId,
+    },
+    /// [SHARE-2, SHARE-3] waits until this context holds the entries under
+    /// the collected keys together, or the whole map when the runtime cannot
+    /// hold them so; statements on the map's other keys go on beside it,
+    /// which gives no outcome the whole hold would not in a program with no
+    /// object section (`semantic::runs_object_sections`), the only programs
+    /// lowering emits this in. Defines `Unit`.
+    SharedMapHoldKeys {
+        object: IrValueId,
+    },
+    /// [SHARE-3] gives up what [`Self::SharedMapHoldKeys`] holds, each entry
+    /// kept when it holds `Some` and removed when it holds `None`. Defines
+    /// `Unit`.
+    SharedMapReleaseKeys {
+        object: IrValueId,
+    },
+    /// [SHARE-2] the entry under the bytes the range `key` names, one of the
+    /// keys collected for the statement that holds the state `object`
+    /// addresses. Defines the address of the entry, an `Option<V>`.
+    SharedMapHeld {
+        nominal: IrNominalId,
+        object: IrValueId,
+        key: IrValueId,
+    },
+    /// Ends the block on the entry `entry` names, the address
+    /// [`Self::SharedMapHeld`] defined, which stays held until the release.
+    /// Defines `Unit`.
+    SharedMapLeaveHeld {
+        object: IrValueId,
+        entry: IrValueId,
     },
     /// [SHARE-1] how many entries of the state `state` addresses hold `Some`.
     /// Defines `u64`.

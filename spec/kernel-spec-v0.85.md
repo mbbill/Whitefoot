@@ -1,4 +1,4 @@
-# Kernel Specification v0.86
+# Kernel Specification v0.85
 
 Rule IDs are stable; diagnostics cite rule IDs.
 
@@ -2226,7 +2226,6 @@ The atomic statements holding one object's state take effect in one order [WAIT-
 A statement whose guard is false in the state at every point after it begins does not complete, as a waiting host operation whose outcome never arrives does not complete [WAIT-2].
 A statement that has begun and has not taken effect waits for its guard while its guard is false in the object's state, and [WAIT-2] states when it takes effect.
 How many times an implementation evaluates a guard is not observable, since the guard writes nothing.
-An implementation may hold less than a statement holds, or hold it together with other statements, wherever the program's outcomes are those it has when every statement's block executes with exclusive access to what the statement holds.
 
 ## 14. Prelude and host modules (normative, counted)
 

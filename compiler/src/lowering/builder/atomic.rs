@@ -10,7 +10,14 @@
 //! and acquires it again once a statement that writes the object has ended
 //! [SHARE-3]. A statement on an entry of a state an enclosing statement holds
 //! reaches the map through that state and takes no handle.
+//!
+//! [SHARE-3] a statement holding a map's state whose keys are computed
+//! before its block runs (`semantic::key_twins`) holds those keys' entries
+//! instead of the map: its twin is lowered first and collects the keys, the
+//! runtime holds their entries together, and each statement on an entry in
+//! its block then reaches an entry already held.
 
+use crate::NodePath;
 use crate::semantic::{
     BindingId, CheckedAtomicForm, CheckedDrop, CheckedEnumType, CheckedExpression,
     CheckedStatement, CheckedType,
@@ -40,11 +47,20 @@ pub(super) struct AtomicRegion {
 enum Hold {
     Object,
     Map,
+    /// The entries under a map statement's collected keys.
+    Keys,
+    /// An entry under one of the keys an enclosing statement collected, at
+    /// the address `entry`, which that statement holds until it ends.
+    Held {
+        entry: IrValueId,
+    },
     /// An entry, at the address `entry`; `held` when the map's state is held
-    /// by an enclosing statement, so no handle of its own is released.
+    /// by an enclosing statement, so no handle of its own is released;
+    /// `reads` when the statement only reads it beside others that do.
     Entry {
         entry: IrValueId,
         held: bool,
+        reads: bool,
     },
 }
 
@@ -52,6 +68,7 @@ impl IrBuilder<'_> {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn lower_atomic(
         &mut self,
+        node_path: &NodePath,
         target: &CheckedExpression,
         form: CheckedAtomicForm,
         borrowed: bool,
@@ -65,7 +82,21 @@ impl IrBuilder<'_> {
     ) -> Result<(), LoweringFailure> {
         let state_type = lower_type(self.erasure, state)?;
         let referent = IrAddressed::of(state_type).ok_or(LoweringFailure::InvalidCheckedProgram)?;
-        let held = matches!(form, CheckedAtomicForm::Entry { held: true });
+        let held = matches!(form, CheckedAtomicForm::Entry { held: true, .. });
+        if let Some(object) = self.collecting {
+            // Inside a twin: the statement adds its key and runs no block.
+            // Its target, the held state, is not bound yet.
+            let key = key.ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            if !held || !body.is_empty() {
+                return Err(LoweringFailure::InvalidCheckedProgram);
+            }
+            let key = self.expression(key)?;
+            if !matches!(self.value_type(key)?, IrType::Range { .. }) {
+                return Err(LoweringFailure::InvalidCheckedProgram);
+            }
+            self.define(IrType::Unit, IrOperation::SharedMapKey { object, key })?;
+            return Ok(());
+        }
         let target_value = self.expression(target)?;
         let IrType::Address(IrAddressed::Nominal(nominal)) = self.value_type(target_value)? else {
             return Err(LoweringFailure::InvalidCheckedProgram);
@@ -81,8 +112,8 @@ impl IrBuilder<'_> {
         let expected = match (form, shape) {
             (CheckedAtomicForm::Object, Some((state, IrShared::Object))) => state == state_type,
             (CheckedAtomicForm::Map, Some((_, IrShared::Map { .. }))) => true,
-            (CheckedAtomicForm::Entry { held: false }, Some((_, IrShared::Map { entry })))
-            | (CheckedAtomicForm::Entry { held: true }, Some((_, IrShared::State { entry }))) => {
+            (CheckedAtomicForm::Entry { held: false, .. }, Some((_, IrShared::Map { entry })))
+            | (CheckedAtomicForm::Entry { held: true, .. }, Some((_, IrShared::State { entry }))) => {
                 entry == state_type
             }
             _ => false,
@@ -128,7 +159,19 @@ impl IrBuilder<'_> {
                 let IrType::Nominal(state_nominal) = state_type else {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 };
-                self.define(IrType::Unit, IrOperation::SharedMapHold { object })?;
+                let twin = self.key_twins.remove(node_path);
+                let hold = match &twin {
+                    Some(twin) => {
+                        self.define(IrType::Unit, IrOperation::SharedMapKeys { object })?;
+                        self.collect_keys(object, twin)?;
+                        self.define(IrType::Unit, IrOperation::SharedMapHoldKeys { object })?;
+                        Hold::Keys
+                    }
+                    None => {
+                        self.define(IrType::Unit, IrOperation::SharedMapHold { object })?;
+                        Hold::Map
+                    }
+                };
                 let address = self.define(
                     IrType::Address(referent),
                     IrOperation::SharedMapState {
@@ -137,25 +180,57 @@ impl IrBuilder<'_> {
                     },
                 )?;
                 self.bind_atomic(binding, address)?;
-                Hold::Map
+                hold
             }
-            CheckedAtomicForm::Entry { held } => {
+            CheckedAtomicForm::Entry { held, reads } => {
+                // A statement inside a whole-map statement's block holds its
+                // entry as that statement holds the map, alone.
+                let reads = reads && !held;
                 let key = key.ok_or(LoweringFailure::InvalidCheckedProgram)?;
                 let key = self.expression(key)?;
                 if !matches!(self.value_type(key)?, IrType::Range { .. }) {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
-                let entry = self.define(
-                    IrType::Address(referent),
-                    IrOperation::SharedMapLock {
-                        nominal,
-                        object,
-                        key,
-                        held,
-                    },
-                )?;
-                self.bind_atomic(binding, entry)?;
-                Hold::Entry { entry, held }
+                // [SHARE-2] a statement on an entry of a held state lies
+                // directly in the block of the statement holding that state.
+                if held
+                    && !matches!(
+                        self.atomics.last().map(|region| region.hold),
+                        Some(Hold::Keys | Hold::Map)
+                    )
+                {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                let collected = held
+                    && matches!(
+                        self.atomics.last().map(|region| region.hold),
+                        Some(Hold::Keys)
+                    );
+                if collected {
+                    let entry = self.define(
+                        IrType::Address(referent),
+                        IrOperation::SharedMapHeld {
+                            nominal,
+                            object,
+                            key,
+                        },
+                    )?;
+                    self.bind_atomic(binding, entry)?;
+                    Hold::Held { entry }
+                } else {
+                    let entry = self.define(
+                        IrType::Address(referent),
+                        IrOperation::SharedMapLock {
+                            nominal,
+                            object,
+                            key,
+                            held,
+                            reads,
+                        },
+                    )?;
+                    self.bind_atomic(binding, entry)?;
+                    Hold::Entry { entry, held, reads }
+                }
             }
         };
         let region = AtomicRegion {
@@ -175,6 +250,33 @@ impl IrBuilder<'_> {
         }
         self.bindings
             .retain(|binding, _| enclosing.contains(binding));
+        Ok(())
+    }
+
+    /// Lowers a twin, the statements that compute the keys a statement
+    /// holding the map `object` names will reach: each statement on an entry
+    /// in it adds its key. What the twin bound and recorded for its own
+    /// values is dropped again, since the block binds the same names when it
+    /// runs.
+    fn collect_keys(
+        &mut self,
+        object: IrValueId,
+        twin: &[CheckedStatement],
+    ) -> Result<(), LoweringFailure> {
+        let enclosing = self.bindings.keys().copied().collect::<Vec<_>>();
+        let call_results = self.call_results.clone();
+        let addressed = self.addressed_bindings.clone();
+        let outer = self.collecting.replace(object);
+        let lowered = self.lower_statements(twin, None);
+        self.collecting = outer;
+        lowered?;
+        if self.current.is_none() {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+        self.bindings
+            .retain(|binding, _| enclosing.contains(binding));
+        self.call_results = call_results;
+        self.addressed_bindings = addressed;
         Ok(())
     }
 
@@ -273,12 +375,20 @@ impl IrBuilder<'_> {
         match region.hold {
             Hold::Object => self.define(IrType::Unit, IrOperation::SharedUnlock { object })?,
             Hold::Map => self.define(IrType::Unit, IrOperation::SharedMapUnhold { object })?,
-            Hold::Entry { entry, held } => self.define(
+            Hold::Keys => {
+                self.define(IrType::Unit, IrOperation::SharedMapReleaseKeys { object })?
+            }
+            Hold::Held { entry } => self.define(
+                IrType::Unit,
+                IrOperation::SharedMapLeaveHeld { object, entry },
+            )?,
+            Hold::Entry { entry, held, reads } => self.define(
                 IrType::Unit,
                 IrOperation::SharedMapUnlock {
                     object,
                     entry,
                     held,
+                    reads,
                 },
             )?,
         };

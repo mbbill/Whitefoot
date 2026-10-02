@@ -2421,13 +2421,36 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 self.emit_shared_map_call(result, *object, "wf__shared_map_unhold")
             }
             IrOperation::SharedMapLock {
-                object, key, held, ..
-            } => self.emit_shared_map_lock(result, *object, *key, *held),
+                object,
+                key,
+                held,
+                reads,
+                ..
+            } => self.emit_shared_map_lock(result, *object, *key, *held, *reads),
             IrOperation::SharedMapUnlock {
                 object,
                 entry,
                 held,
-            } => self.emit_shared_map_unlock(result, *object, *entry, *held),
+                reads,
+            } => self.emit_shared_map_unlock(result, *object, *entry, *held, *reads),
+            IrOperation::SharedMapKeys { object } => {
+                self.emit_shared_map_call(result, *object, "wf__shared_map_keys")
+            }
+            IrOperation::SharedMapHoldKeys { object } => {
+                self.emit_shared_map_call(result, *object, "wf__shared_map_hold_keys")
+            }
+            IrOperation::SharedMapReleaseKeys { object } => {
+                self.emit_shared_map_call(result, *object, "wf__shared_map_release_keys")
+            }
+            IrOperation::SharedMapKey { object, key } => {
+                self.emit_shared_map_key(result, *object, *key)
+            }
+            IrOperation::SharedMapHeld { object, key, .. } => {
+                self.emit_shared_map_held(result, *object, *key)
+            }
+            IrOperation::SharedMapLeaveHeld { object, entry } => {
+                self.emit_shared_map_leave_held(result, *object, *entry)
+            }
             IrOperation::SharedMapCount { state } => self.emit_shared_map_count(result, *state),
             IrOperation::BoxTake { nominal, value } => {
                 self.emit_box_take(result, ty, *nominal, *value)

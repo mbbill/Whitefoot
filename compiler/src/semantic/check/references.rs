@@ -1652,6 +1652,18 @@ impl<'unit> Checker<'_, 'unit> {
             .map(|declaration| declaration.id())
     }
 
+    /// Whether `declaration` is an atomic statement's binder [SHARE-2].
+    pub(super) fn is_atomic_binder(&self, declaration: DeclarationId) -> bool {
+        self.types
+            .declarations
+            .resolved
+            .declarations()
+            .iter()
+            .any(|candidate| {
+                candidate.id() == declaration && candidate.role() == DeclarationRole::AtomicBinder
+            })
+    }
+
     /// [EFF-2] the enclosing formal-rooted effect of one resolved access.
     ///
     /// An access rooted only in local storage contributes no enclosing path,
@@ -1671,6 +1683,9 @@ impl<'unit> Checker<'_, 'unit> {
         };
         // [EFF-1] every `effect_path` is rooted at one reference parameter of
         // the same callable; a by-value parameter has no effect entry at all.
+        // An atomic statement's binder roots paths too, so the statement can
+        // tell whether its block writes what it holds [SHARE-3]; the
+        // statement removes them before its effects reach the row.
         if local.mode == CheckedMode::Own {
             return Ok(Vec::new());
         }
@@ -1682,7 +1697,10 @@ impl<'unit> Checker<'_, 'unit> {
                 .iter()
                 .any(|declaration| {
                     declaration.id() == local.declaration
-                        && declaration.role() == DeclarationRole::Parameter
+                        && matches!(
+                            declaration.role(),
+                            DeclarationRole::Parameter | DeclarationRole::AtomicBinder
+                        )
                 });
         if !is_parameter {
             return Ok(Vec::new());
