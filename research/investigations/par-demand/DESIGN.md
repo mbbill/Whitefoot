@@ -2306,3 +2306,344 @@ build, test, harness execution or measurement has run locally; new compiler
 shape checks, construction, topology, image comparisons and results await CI
 and image review. Retain the harness while this attribution needs reproduction;
 retire it with the investigation when that question ends.
+
+
+## Experiment 5c's results
+
+[Compute-bench run 38100091671](https://github.com/Ming-Research/Whitefoot/actions/runs/38100091671),
+`claude/par-demand` at `19733d3551e5e8aedf907a05363b235178e2f89e`, native
+i9-14900K (`MBSDESKTOP`, Linux 7.0.0-38-generic, x86-64; Clang 18.1.3,
+native runtime `-O2 -falign-functions=64`). The 14900K job ran
+2026-10-11 01:00:25–01:21:27 UTC (run metadata supplied with the artifacts).
+This analysis reads downloaded data and disassembles downloaded objects; it
+neither executes those images nor independently repeats CI's construction,
+oracle verification or compiler checks.
+
+**Placement and sample.** Both decisive and sizing `identity.json` record
+W1 `{2}`, W4 `{2,4,6,8}`, W8 `{2,4,6,8,10,12,14,1}`. The saved P-core mask is
+`0-15`; all selected CPUs are allowed, online and on distinct physical cores.
+The saved reciprocal sibling lists are `2-3`, `4-5`, `6-7`, `8-9`, `10-11`,
+`12-13`, `14-15`, and **`0-1`**. W8 therefore uses **CPU 1, CPU 0's sibling**:
+no process is pinned to logical CPU 0, but its physical core is shared with
+CPU 0 activity. The pinned sets match the registered placement and this
+revision's `measure.py` applies them through `taskset -c`; the identity is
+saved configuration evidence, not a per-process affinity trace.
+
+Recomputing `sizing-e5c/measurements.tsv` with this revision's `summarize.py`
+freezes **n = 30** under the registered six-round projection. The **2,160**
+sizing rows judge nothing and are not pooled with the **12,300** decisive
+rows: thirty rounds of all 36 cells, five arms and both calls, plus exactly
+one thirty-round rerun of recursion W8, hot_helper W1, stencil W4/W8 and
+histogram W8. There is no missing required rerun. Pairing, both-call coverage
+and constant comparison counts pass the reducer's data checks. Every initial
+and rerun quantity exactly matches downloaded `summary.json`; an independent
+TSV reducer also reproduces every median and interval for small_split W1/4/8
+E4-seq, recursion W4/W8 E4-par, hot_helper W1 E4-seq (both attempts),
+mandelbrot/records W1 E4-seq, and stencil/histogram W1/4/8 H3 (both attempts
+where present). All 60 executable hashes match the identity; all twelve twins
+are byte-identical to demand. All 48 workload objects match the hosted
+`par-demand-images/par-demand-images.tar.gz` bundle, as do all 96 workload
+LLVM and linked-disassembly files used for inventory and path inspection.
+
+Evidence is this run's `par-demand-results-14900k/{measurements.tsv,summary.json,identity.json}`,
+`sizing-e5c/`, and `par-demand-images`; the normalized image comparisons were
+made from those objects with `llvm-objdump -dr`, normalizing addresses,
+relocation addends and clone callee names. The downloaded summary
+has no image-inspection evidence, so it withholds passes. The verdicts below
+add the inspection recorded here and preserve every numerical bound, twin
+void and rerun disagreement.
+
+**Literal verdicts.** Each ratio is a dimensionless median of same-round
+second-call wall ratios, with a 95% median bootstrap interval (10,000 draws,
+seed `20261010`). H3 is the registered dimensionless margin normalized to
+same-round seq CPU. P = pass, F = persistent fail, I = inconclusive,
+V = either attempt's twin interval excludes 1, – = not applicable. Voiding
+has precedence, including the reported controls. E4-par applies only where
+that attempt's par/seq interval is wholly below 1; E5c-keep has no such
+condition. Small_constant and spine decide nothing for E4; their literal
+keep comparison still applies. A rerun disagreement stays I, including
+recursion W8 keep's initial pass and rerun straddle.
+
+| Rule (quantity, baseline and ideal bound) | P, cells | F, cells | I, cells | V, cells | Not applicable, cells | Total, cells |
+|---|---:|---:|---:|---:|---:|---:|
+| E4-seq: demand/seq wall, dimensionless, ≤ 1.00 | 18 | 1 | 10 | 2 | 5 | 36 |
+| E4-par: demand/par wall, dimensionless, ≤ 1.05 | 16 | 1 | 1 | 2 | 16 | 36 |
+| E4-H3: demand CPU margin/seq CPU, dimensionless, ≤ 0 | 24 | 3 | 2 | 2 | 5 | 36 |
+| E5c-keep: demand/unversioned wall, dimensionless, ≤ 1.05 | 32 | 0 | 2 | 2 | 0 | 36 |
+
+| Workload | Workers W, count | E4-seq verdict, demand/seq wall ≤ 1.00 | E4-par verdict, demand/par wall ≤ 1.05 | E4-H3 verdict, CPU margin/seq CPU ≤ 0 | E5c-keep verdict, demand/unversioned wall ≤ 1.05 |
+|---|---:|---|---|---|---|
+| small_constant | 1 | – | – | – | P |
+| small_constant | 4 | V | V | V | V |
+| small_constant | 8 | – | – | – | I |
+| small_split | 1 | I | – | P | P |
+| small_split | 4 | I | – | P | P |
+| small_split | 8 | I | – | P | P |
+| recursion | 1 | I | – | P | P |
+| recursion | 4 | P | I | P | P |
+| recursion | 8 | P | F | P | I |
+| spine | 1 | – | – | – | P |
+| spine | 4 | – | – | – | P |
+| spine | 8 | – | – | – | P |
+| hot_helper | 1 | F | – | P | P |
+| hot_helper | 4 | I | – | P | P |
+| hot_helper | 8 | I | – | P | P |
+| large_helper | 1 | P | P | P | P |
+| large_helper | 4 | P | P | P | P |
+| large_helper | 8 | P | P | P | P |
+| mandelbrot | 1 | I | – | P | P |
+| mandelbrot | 4 | P | P | P | P |
+| mandelbrot | 8 | P | P | P | P |
+| records | 1 | I | – | P | P |
+| records | 4 | P | P | P | P |
+| records | 8 | P | P | P | P |
+| fir | 1 | P | P | P | P |
+| fir | 4 | V | V | V | V |
+| fir | 8 | P | P | P | P |
+| stencil | 1 | I | – | P | P |
+| stencil | 4 | P | P | F | P |
+| stencil | 8 | P | P | F | P |
+| prefix | 1 | I | – | P | P |
+| prefix | 4 | P | P | P | P |
+| prefix | 8 | P | P | I | P |
+| histogram | 1 | P | P | P | P |
+| histogram | 4 | P | P | I | P |
+| histogram | 8 | P | P | F | P |
+
+**Cells that fail, remain inconclusive or are void.** Every F/I rule is
+shown with both attempts when the cell was rerun. V rows show the twin
+quantity that invalidates all four rules, rather than assigning a numerical
+loss to an invalid cell. No straddle receives an extra rerun. Values are
+rounded to six decimal places here; full precision selects the verdict.
+
+| Workload | Workers W, count | Rule and quantity definition, dimensionless; denominator is baseline; ideal seq ≤ 1.00, par/keep ≤ 1.05, H3 ≤ 0, twin = 1 | Initial median [95% interval], dimensionless | Rerun median [95% interval], dimensionless | Literal verdict |
+|---|---:|---|---|---|---|
+| small_constant | 4 | twin/demand wall | 0.910316 [0.875278, 0.983942] | – | V, all rules |
+| small_constant | 8 | E5c-keep: demand/unversioned wall | 0.962202 [0.903262, 1.050378] | – | I |
+| small_split | 1 | E4-seq: demand/seq wall | 0.999431 [0.991852, 1.000053] | – | I |
+| small_split | 4 | E4-seq: demand/seq wall | 1.000403 [0.999764, 1.000865] | – | I |
+| small_split | 8 | E4-seq: demand/seq wall | 0.999503 [0.999080, 1.000103] | – | I |
+| recursion | 1 | E4-seq: demand/seq wall | 1.006915 [0.975683, 1.035369] | – | I |
+| recursion | 4 | E4-par: demand/par wall | 1.065696 [1.036252, 1.090506] | – | I |
+| recursion | 8 | E4-par: demand/par wall | 1.085946 [1.078074, 1.099753] | 1.113828 [1.092974, 1.138903] | F |
+| recursion | 8 | E5c-keep: demand/unversioned wall | 0.993155 [0.979064, 1.035969] | 1.036260 [1.014796, 1.070927] | I |
+| hot_helper | 1 | E4-seq: demand/seq wall | 1.000225 [1.000053, 1.000307] | 1.000080 [1.000021, 1.000158] | F |
+| hot_helper | 4 | E4-seq: demand/seq wall | 1.000169 [0.999996, 1.000320] | – | I |
+| hot_helper | 8 | E4-seq: demand/seq wall | 1.000068 [0.999988, 1.000251] | – | I |
+| mandelbrot | 1 | E4-seq: demand/seq wall | 0.999256 [0.995571, 1.003663] | – | I |
+| records | 1 | E4-seq: demand/seq wall | 1.000481 [0.998778, 1.003119] | – | I |
+| fir | 4 | twin/demand wall | 0.999276 [0.998775, 0.999767] | – | V, all rules |
+| stencil | 1 | E4-seq: demand/seq wall | 1.001200 [0.997680, 1.005501] | – | I |
+| stencil | 4 | E4-H3: demand CPU margin/seq CPU | 0.157522 [0.130168, 0.192113] | 0.190670 [0.169718, 0.238023] | F |
+| stencil | 8 | E4-H3: demand CPU margin/seq CPU | 0.566776 [0.508151, 0.789405] | 0.573548 [0.524100, 0.791695] | F |
+| prefix | 1 | E4-seq: demand/seq wall | 0.999175 [0.987787, 1.002858] | – | I |
+| prefix | 8 | E4-H3: demand CPU margin/seq CPU | -0.323137 [-0.386081, 0.170838] | – | I |
+| histogram | 4 | E4-H3: demand CPU margin/seq CPU | 0.009517 [-0.011076, 0.028027] | – | I |
+| histogram | 8 | E4-H3: demand CPU margin/seq CPU | 0.209959 [0.123325, 0.274229] | 0.188200 [0.129365, 0.201424] | F |
+
+For comparison, the same H3 definition gives these reference margins;
+they are observations, not additional verdict rules.
+
+| Workload | Workers W, count | Attempt, count | par H3 margin/seq CPU, median [95% interval], dimensionless; ideal ≤ 0 | unversioned H3 margin/seq CPU, median [95% interval], dimensionless; ideal ≤ 0 |
+|---|---:|---:|---|---|
+| stencil | 4 | 1 | 0.197336 [0.175415, 0.215047] | 0.162281 [0.135427, 0.197381] |
+| stencil | 4 | 2 | 0.191643 [0.165263, 0.238878] | 0.191301 [0.169985, 0.228424] |
+| stencil | 8 | 1 | 0.591898 [0.538024, 0.766110] | 0.544900 [0.510954, 0.759245] |
+| stencil | 8 | 2 | 0.586261 [0.544869, 0.792086] | 0.597755 [0.554273, 0.794594] |
+| histogram | 4 | 1 | -0.004463 [-0.028549, 0.016034] | -0.001831 [-0.023480, 0.023598] |
+| histogram | 8 | 1 | 0.177984 [0.098098, 0.210363] | 0.160518 [0.131763, 0.220703] |
+| histogram | 8 | 2 | 0.153223 [0.112222, 0.194956] | 0.180469 [0.126233, 0.222413] |
+
+**Images and clone inventory.** Only **small_split's `wf_workload`** has a
+`par.region.entry` cheap-region versioning block. Its entry selects sequential
+work for extent < 21,429 (`cmp $0x53b4` / `ja`), then tail-jumps to the clone
+for extent 3. The sequential `wf_workload` clone is identical to seq after
+normalization, retains the repetition walker and runtime-extent stores, and
+has no per-iteration scheduling decision. Unversioned retains the span
+calculation and `cmp $0x53b4` inside the walker on every repetition, plus the
+cold edge to `wf__par_slice_mark.0`. Thus the intended decision removal is
+visible in this run's optimized code.
+
+The existing entry selection between parallel and sequential worlds also
+survives in small_split, recursion, spine, large_helper, mandelbrot, records,
+fir, stencil, prefix and histogram. At W1 those entries select sequential
+work; at W4/W8 they select the parallel body, with small_split then selecting
+its cheap sequential region. **Small_constant and hot_helper have neither
+cheap-region versioning nor entry clone selection.** All other workloads
+have no new cheap region. Demand and unversioned executable hashes are equal
+for every workload except small_split, so this ablation changes only that
+workload's image.
+
+The comparison uses `xcrun llvm-objdump -dr` and the objects' symbol sizes
+(`-t`) to bound each function, excluding inter-function padding and byte
+continuation lines. Instruction addresses and branch targets become local
+instruction labels; resolved private text addresses and relocation addends
+are normalized, clone callees are mapped to their seq names, and constant
+pool relocations retain their referenced constant bytes (`-s`). Internal
+alignment instructions remain. This avoids mistaking different addresses,
+unnamed resource-abort targets or adjacent weak functions for different
+code. All 42 sequential-clone definitions in the ten LLVM images are
+inventoried in the retained diff: 25 original-function clones and 17 generated
+chunk clones. No clone is omitted. Generated chunks have no standalone
+counterpart in seq; their retained comparisons use the original owning seq
+function containing that loop, explicitly a different function boundary/ABI.
+Their nonidentity does not establish different work.
+
+In this table clone names omit `wf__par_seq_`; corresponding seq names use
+`wf_`. Iden = identical after address/relocation normalization; Diff =
+different beyond register renaming. **No comparison is register-renaming
+only.** “Selected” names the timed sequential body, with its reachable
+original-function helpers; untimed main/smoke clones remain inventoried too.
+
+| Workload | Selected original-function clones vs corresponding seq functions | Other original-function clones | Generated chunk clones vs owning seq function |
+|---|---|---|---|
+| small_split | workload, mark: Iden | – | mark.1: Diff |
+| recursion | workload, fib: Iden | – | none |
+| spine | workload, spine: Iden | – | none |
+| large_helper | workload, helper: Iden | – | helper.1: Diff |
+| mandelbrot | render_points: Iden | command_smoke, main: Iden | render_points.1: Diff |
+| records | summarize_records: Iden | main: Iden | summarize_records.1: Diff |
+| fir | filter: Diff | command_smoke, main: Iden | filter.1: Diff |
+| stencil | stencil: Diff; stencil_row: Iden | main: Iden | stencil_row.1, stencil.1/.3/.5: Diff |
+| prefix | prefix: Diff; sum_block: Iden | main: Iden | sum_block.1, prefix.1/.3, main.1: Diff |
+| histogram | histogram, merge_bucket: Diff | main: Iden | merge_bucket.1, histogram.1/.3, main.1: Diff |
+
+The differing selected bodies are not merely renamed registers: fir's seq
+filter unrolls output iterations by two, while demand's clone unrolls the
+inner tap loop by four; prefix changes its stack frame (40 to 56 bytes),
+loop preparation and branch conditions; histogram's merge introduces a
+four-way strided reduction and its enclosing histogram differs; stencil's
+enclosing body has changed loop organization while stencil_row is identical.
+The retained diff records these differences without assigning their timing
+cause to versioning, whose unversioned ablation has the same images here.
+
+Timed work survives: small_split retains stores and accumulation; recursion
+retains Fibonacci recursion/addition and budgeted request-gated offers;
+spine retains its deep recurrence, whose leaf is folded; large_helper retains
+its data-dependent recurrence over the slice; mandelbrot retains escape
+iterations; records retains validation and reduction; fir retains tap multiply/
+adds; stencil retains row updates; prefix retains block sums and scan;
+histogram retains bucket counting and merging. Small_constant is the
+registered folded control: its repeated tiny stores collapse to final values
+(the reported keep comparison still applies).
+
+The surviving decision in each demand slice driver is an extent/grain
+comparison followed, only above its bound, by a TLS `%fs` request-word load,
+test and conditional branch to hand-out. This appears in helper, render_points,
+summarize_records, filter, stencil_row/stencil, sum_block/prefix and
+merge_bucket/histogram drivers. The recursion and spine budgeted bodies
+test the budget, transfer to the sequential clone when exhausted, and otherwise
+decrement it before the TLS load/test/branch. These are inspected scheduling
+paths; the W1 entry selection bypasses them, and small_split's cheap-region
+selection bypasses its driver at the measured extent.
+
+**Hot_helper W1 executes the same work as seq.** Its grain-pruned image has
+no `par.region.entry`, no sequential clone, no pool-active selection and no
+request poll in the timed body. `wf_bench_micro` contains the inlined helper's
+data-dependent rotate/add loops and the repetition loop. Both this actual
+timed wrapper and `wf_workload` have identical normalized disassembly to seq;
+the linked images have different addresses. The persistent E4-seq loss is
+therefore **not evidence of an executed scheduling decision**. Its cause is
+unattributed; equal normalized code does not waive the literal bound.
+
+**E4-seq beside 5a's observed layout spreads.** Every W1 cell is shown,
+including controls, plus all near-1 W4/W8 E4-seq cells. The historical spread
+is `max((upper−lower)/2, abs(median−1))` of shifted-seq/seq wall ratios on
+CPU 2 at W1, in shift64 / shift4160 / shift65664 order. The panel maximum
+is **0.006751**. Micros were unmeasured; records' 5a cell was void; 5a's
+**overall reading remains inconclusive**. These observations select neither
+a layout allowance nor a changed literal verdict, and establish no W4/W8
+floor. Full historical intervals remain in [5a's results](#experiment-5as-results).
+
+| Workload | Workers W, count | E5c demand/seq second-call wall median [95% interval], dimensionless; baseline seq, ideal ≤ 1.00 | Literal E4-seq verdict | E5a W1 shifted-seq/seq spread, dimensionless; baseline unshifted seq, quiet ideal < 0.001, floor criterion ≥ 0.0015 | E5a panel largest spread, dimensionless; same definition |
+|---|---:|---|---|---|---:|
+| small_constant | 1 | 0.987234 [0.967257, 1.010961] | – | unmeasured micro | 0.006751 |
+| small_split | 1 | 0.999431 [0.991852, 1.000053] | I | unmeasured micro | 0.006751 |
+| small_split | 4 | 1.000403 [0.999764, 1.000865] | I | unmeasured micro | 0.006751 |
+| small_split | 8 | 0.999503 [0.999080, 1.000103] | I | unmeasured micro | 0.006751 |
+| recursion | 1 | 1.006915 [0.975683, 1.035369] | I | unmeasured micro | 0.006751 |
+| spine | 1 | 0.995890 [0.994655, 0.997714] | – | unmeasured micro | 0.006751 |
+| hot_helper | 1 | 1.000225 [1.000053, 1.000307]; rerun 1.000080 [1.000021, 1.000158] | F | unmeasured micro | 0.006751 |
+| hot_helper | 4 | 1.000169 [0.999996, 1.000320] | I | unmeasured micro | 0.006751 |
+| hot_helper | 8 | 1.000068 [0.999988, 1.000251] | I | unmeasured micro | 0.006751 |
+| large_helper | 1 | 0.993082 [0.992103, 0.993744] | P | unmeasured micro | 0.006751 |
+| mandelbrot | 1 | 0.999256 [0.995571, 1.003663] | I | 0.004611 / 0.004012 / 0.002904 | 0.006751 |
+| records | 1 | 1.000481 [0.998778, 1.003119] | I | 0.002021 / 0.001588 / 0.002010 (5a void) | 0.006751 |
+| fir | 1 | 0.955989 [0.954594, 0.956985] | P | 0.000895 / 0.001901 / 0.000965 | 0.006751 |
+| stencil | 1 | 1.001200 [0.997680, 1.005501] | I | 0.001220 / 0.001888 / 0.001295 | 0.006751 |
+| prefix | 1 | 0.999175 [0.987787, 1.002858] | I | 0.004408 / 0.005413 / 0.005881 | 0.006751 |
+| histogram | 1 | 0.982851 [0.977106, 0.990422] | P | 0.006751 / 0.003918 / 0.002170 | 0.006751 |
+
+**First-call startup, separate from the judging second call.** The table
+reports ranges of each cell/attempt's median first-call CPU−wall across
+W1/W4/W8 and available reruns, in µs (ideal 0; negative values are retained).
+Individual intervals remain in the downloaded summary. No startup quantity
+changes a verdict above.
+
+| Workload | seq CPU−wall median range, µs, ideal 0 | par CPU−wall median range, µs, ideal 0 | demand CPU−wall median range, µs, ideal 0 | unversioned CPU−wall median range, µs, ideal 0 | twin CPU−wall median range, µs, ideal 0 |
+|---|---:|---:|---:|---:|---:|
+| small_constant | 1.855 to 2.415 | -212.464 to 1.866 | 1.847 to 2.473 | 1.893 to 2.498 | 1.859 to 2.470 |
+| small_split | -27.055 to -11.411 | -215.887 to -11.167 | -12.303 to 8180.533 | -10.255 to 8208.817 | -10.479 to 8226.217 |
+| recursion | -7.760 to -2.940 | -3.938 to 61843.848 | -3.740 to 73559.643 | -3.322 to 73499.147 | -3.358 to 72649.314 |
+| spine | 1.658 to 2.200 | 1.502 to 291503.086 | 0.547 to 253852.193 | 1.508 to 249853.918 | 1.572 to 256137.410 |
+| hot_helper | -9.242 to -3.852 | -6.774 to -5.285 | -6.048 to -4.609 | -8.465 to -3.123 | -6.261 to -4.615 |
+| large_helper | -4.741 to -2.167 | -2.607 to 163311.834 | -2.462 to 45422.296 | -2.252 to 46043.231 | -2.558 to 44430.779 |
+| mandelbrot | 1.840 to 2.035 | 1.812 to 9170.317 | 1.847 to 9614.306 | 1.841 to 9487.752 | 1.775 to 9384.718 |
+| records | 4.967 to 5.410 | 4.975 to 7123.237 | 4.962 to 10093.975 | 4.981 to 8694.914 | 4.889 to 8390.300 |
+| fir | 2.679 to 4.229 | 2.670 to 4762.956 | 2.792 to 10328.636 | 2.533 to 8535.094 | 2.638 to 9670.317 |
+| stencil | 3.181 to 5.098 | 5.069 to 117536.027 | 4.159 to 123370.539 | -1.721 to 124896.064 | 2.826 to 123713.621 |
+| prefix | 3.925 to 4.473 | 3.834 to 109.725 | 3.951 to 8076.534 | 3.886 to 8051.243 | 3.857 to 8079.452 |
+| histogram | -2.498 to -0.164 | -1.845 to 13720.567 | -1.885 to 20944.281 | -1.988 to 20859.787 | -3.114 to 20958.394 |
+
+**Falsifier and predictions.** Small_split W4/W8 have no persistent interval
+wholly above 1: both straddle 1, so the registered whole-cause falsifier is
+**not triggered**, despite confirmed removal of the per-iteration decision.
+This does not prove that decision was the whole cause. Their median
+absolute displacements, 0.000403 and 0.000497, and interval half-widths,
+0.000551 and 0.000512, are below the historical panel maximum 0.006751.
+Thus the prediction's “within the observed spread” alternative is numerically
+met against that panel observation; its literal-pass alternative is not met.
+There is no small_split layout control and no measured W4/W8 layout floor,
+so this comparison is descriptive, not an attribution or allowance.
+E5c-keep improves small_split W4/W8 to 0.911491 [0.857601, 0.914235] and
+0.913083 [0.910791, 0.914479] against unversioned, consistent with removing
+the repeated decision. Records passes keep at all widths. Fir passes keep
+at W1/W8, but W4's twin void prevents confirming the prediction at every
+width. Protected workload preservation is also incomplete because recursion
+W8 keep is inconclusive; small_constant W8 keep is a reported-control
+straddle, not a failure. There are no persistent E5c-keep failures.
+
+**What remains and why this analysis stops.** Recursion W8 still fails
+E4-par (8.59% initial and 11.38% rerun median loss against par); W4 remains
+inconclusive. This rejects preservation of every available par speedup and
+returns to the owner's open card **whether budgeted recursion keeps
+request-gated offers**. Stencil W4/W8 and histogram W8 fail H3; histogram W4
+and prefix W8 remain inconclusive. Their positive CPU margins return to the
+open card **whether H3 gates memory-bound programs**, without inferring
+bandwidth saturation from these measurements. Hot_helper W1 fails the
+literal never-slower bound in both attempts, despite identical normalized
+timed code; mandelbrot/records W1 and the other listed straddles remain
+inconclusive. These return to the open card **how never-slower is stated
+and checked**, beside the unchanged 5a observations. All three cards are on
+the [owner's status board](https://claude.ai/artifact/7tocXS3iUdthCLCQCMd3ip);
+this result settles none of them and selects no further lowering change.
+
+Suspicious controls are small_constant W4 (twin/demand 0.910316
+[0.875278, 0.983942], tiny folded work) and fir W4 (0.999276
+[0.998775, 0.999767], identical twin bytes): both are void, not discarded
+or relabeled as passes. W8's CPU 0 physical-core sharing remains a placement
+caveat, not a retrospective exclusion. No specification, threshold, test
+expectation or design decision changed. No local build, compiler execution,
+image execution or test was performed; no commit or push was made.
+
+**Analysis review.** A separate read-only Codex/GPT-6 agent reviewed
+`19733d3551e5e8aedf907a05363b235178e2f89e` to this working-tree results
+addition, including the complete untracked normalized-comparison artifact,
+registration, 5a evidence, relevant design commitments and downloaded data.
+It reproduced the sizing and quantities, strict verdicts, all nonpassing-cell
+values and startup ranges, regenerated all 42 clone comparisons, and audited
+address/relocation normalization against raw disassembly. Findings: none
+within scope. Checklist A4/D2 passed; D1/V3 and specification delivery were
+not applicable; code/test/gate groups were outside this prose-only change.
+CI construction, oracle execution and semantic correctness were not
+independently rerun. Patch whitespace passed `git diff --check`.
